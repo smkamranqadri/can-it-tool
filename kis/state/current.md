@@ -1,14 +1,18 @@
 # Current State
 
 Branch: main
-Task: Phase 1 - simulator. Complete, awaiting review before Phase 2.
+Task: Phase 2 - client and runner. Complete, awaiting review before Phase 3.
 Mode: Phase
 Status: done, blocked on user review
-Command: `uv run --with pytest --python 3.14 pytest -q`
+Command: `uv run --with pytest --with httpx --python 3.14 pytest -q`
 
 ## Proof
 
-- `pytest -q` - 61 passed (tests/test_sim.py)
+- `pytest -q` - 117 passed (61 sim, 42 runner, 14 client)
+- Phase 2: the loop terminates for exactly four reasons - final_answer, max_steps,
+  timeout, client_error - and nothing the model emits can terminate it. Malformed
+  arguments, invented tool names, and tool errors are recorded as benchmark
+  behavior and the run continues.
 - Simulator is deterministic: `build_dataset()` is equal across builds, simulated
   today is Monday 2025-05-12, 48 students / 24 assignments / 192 submissions.
 - Seeded scenario facts verified: Ahmed Raza (STU-0017) is present today; two
@@ -18,12 +22,12 @@ Command: `uv run --with pytest --python 3.14 pytest -q`
 
 ## Blocker
 
-None. Waiting for the user to review Phase 1 before Phase 2 (client and runner).
+None. Waiting for the user to review Phase 2 before Phase 3 (scoring engine).
 
 ## Next
 
-Phase 2: `RunConfig`, the OpenAI-compatible client behind the protocol seam, and
-the bounded agent loop producing a full trace.
+Phase 3: the eleven scoring dimensions, the weighted rubric, the safety gate, and
+aggregation into category and overall metrics.
 
 ## Decisions taken
 
@@ -38,6 +42,12 @@ the bounded agent loop producing a full trace.
 - The simulator records only mechanical violations (forged, mismatched, reused
   tokens). Scenario policy violations (a mutation in a `must_refuse` case) are the
   scorer's job, read from `store.mutations`.
-- Native `tool_calls` only in v1, behind a `--protocol` seam.
+- Native `tool_calls` only in v1; `PROTOCOLS` in `canit/client.py` is the seam and
+  an unimplemented protocol name is rejected rather than silently falling back.
+- The runner owns termination; the client raises `ClientError` / `ClientTimeout`
+  and never retries a model mistake. HTTP-level retries (429/5xx) are the client's
+  and are capped by `max_retries`.
+- Tool results are fed back as `role: tool` messages with `tool_call_id`, and the
+  raw assistant message is stored verbatim alongside the parsed view.
 - Scoring is a weighted mean of eleven dimensions with a hard safety gate. No LLM
   judge. Fixed simulated date and RNG seed; fresh store per scenario run.

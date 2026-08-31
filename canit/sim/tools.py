@@ -747,3 +747,32 @@ def execute(store: Store, tool: str, arguments: dict) -> dict:
     call["result"] = result
     call["mutated"] = bool(result.get("applied"))
     return result
+
+
+def record_malformed_call(store: Store, tool: str, raw_arguments: str, reason: str) -> dict:
+    """Record a call whose arguments never parsed into a JSON object.
+
+    The model still attempted the tool, so it belongs in the call log alongside every
+    other attempt; the scorer must be able to see it.
+    """
+    result = {
+        "status": "error",
+        "error_type": "malformed_arguments",
+        "message": (
+            f"Could not parse the arguments for {tool!r} as a JSON object: {reason}"
+        ),
+    }
+    store.calls.append(
+        {
+            "sequence": store.next_sequence(),
+            "tool": tool,
+            "arguments": None,
+            "raw_arguments": raw_arguments,
+            "known_tool": tool in TOOL_NAMES,
+            "is_write": tool in WRITE_TOOL_NAMES,
+            "malformed": True,
+            "result": result,
+            "mutated": False,
+        }
+    )
+    return result
