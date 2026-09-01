@@ -3,6 +3,11 @@ name = "can-it-tool"
 version = "0.1.0"
 description = "Benchmark harness for LLM tool-calling reliability against a simulated school-management system"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
+authors = [{ name = "Muhammad Kamran" }]
+keywords = ["llm", "benchmark", "tool-calling", "agents", "evaluation", "local-llm"]
 dependencies = ["httpx>=0.27"]
 
 [project.optional-dependencies]

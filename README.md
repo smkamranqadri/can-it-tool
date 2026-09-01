@@ -389,4 +389,8 @@ Three things are versioned independently, because each changes what a score mean
 
 ## Licence
 
-Not yet chosen — see the note in the release checklist before publishing.
+MIT — see [LICENSE](LICENSE).
+
+The simulated school data is fictional. Model names in the results table are
+identifiers for the specific GGUF builds that were benchmarked; no affiliation with
+or endorsement by their authors is implied.
