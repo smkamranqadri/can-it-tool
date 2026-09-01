@@ -1,4 +1,4 @@
-"""Scenario shape shared by the runner and the scorer."""
+"""Scenario shape shared by the runner, the scorer, and the suite validator."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ class Scenario:
     faults: dict[str, list[str]] = field(default_factory=dict)
     max_steps: int | None = None
     notes: str = ""
+    ground_truth: list[dict] = field(default_factory=list)
+    oracle: list[dict] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -24,4 +26,5 @@ class Scenario:
             "faults": self.faults,
             "max_steps": self.max_steps,
             "notes": self.notes,
+            "ground_truth": self.ground_truth,
         }

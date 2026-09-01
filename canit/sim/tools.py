@@ -6,8 +6,9 @@ import copy
 import hashlib
 import json
 
-from .db import ConfirmationToken, Store
+from .db import ConfirmationToken, Store, WeekendDay
 from .errors import fault_response
+from .seed import WEEKDAYS
 from .schemas import (
     ALL_TOOLS,
     CONFIRMATION_ARG,
@@ -390,11 +391,20 @@ def get_timetable(store: Store, class_name: str, day: str) -> dict:
         return _not_found("class", class_name)
     try:
         weekday = store.resolve_day_name(day)
+    except WeekendDay:
+        return {
+            "status": "not_found",
+            "error_type": "not_found",
+            "message": (
+                f"The school does not run on {day}. Timetables exist for "
+                f"{', '.join(WEEKDAYS)} only."
+            ),
+        }
     except ValueError:
         return {
             "status": "error",
             "error_type": "invalid_arguments",
-            "message": f"{day!r} is not a school day.",
+            "message": f"{day!r} is not a day of the week.",
         }
     periods = [
         {

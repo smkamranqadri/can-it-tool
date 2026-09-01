@@ -14,6 +14,10 @@ from datetime import date, datetime, timedelta
 
 from .seed import TODAY, WEEKDAYS, build_dataset
 
+class WeekendDay(ValueError):
+    """A real day name that the school does not run on."""
+
+
 _PRISTINE: dict | None = None
 
 
@@ -102,6 +106,8 @@ class Store:
         for day in WEEKDAYS:
             if day.lower() == text:
                 return day
+        if text in {"saturday", "sunday"}:
+            raise WeekendDay(value)
         raise ValueError(f"not a school day: {value}")
 
     def students(self) -> list[dict]:

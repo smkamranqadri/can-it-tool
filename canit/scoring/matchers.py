@@ -91,12 +91,25 @@ def match_arguments(expected: dict, actual: dict | None) -> tuple[bool, dict]:
     return not mismatches, {"mismatches": mismatches}
 
 
-_DIGIT_GROUPING = re.compile(r"(?<=\d)[,\s](?=\d)")
+_COMMA_GROUPING = re.compile(r"(?<=\d),(?=\d)")
+_SPACE_GROUPING = re.compile(r"(?<=\d)[\s\u00a0\u202f](?=\d)")
 
 
 def normalize_text(text: str) -> str:
-    """Casefold and strip digit grouping so '13,000' and '13 000' read as 13000."""
-    return _DIGIT_GROUPING.sub("", text or "").casefold()
+    """Casefold and squash runs of whitespace."""
+    return " ".join((text or "").split()).casefold()
+
+
+def number_readings(text: str) -> tuple[str, ...]:
+    """Every reading of the text a number could legitimately appear in.
+
+    Digit grouping has to be undone so '13,000' reads as 13000, but undoing it
+    unconditionally would also weld two adjacent numbers together: '80 77' would
+    become '8077' and neither value would be found. Both readings are kept and a
+    number counts as present if it appears in any of them.
+    """
+    base = normalize_text(text)
+    return (base, _COMMA_GROUPING.sub("", base), _SPACE_GROUPING.sub("", _COMMA_GROUPING.sub("", base)))
 
 
 def contains_text(haystack: str, needle: str) -> bool:
@@ -105,4 +118,4 @@ def contains_text(haystack: str, needle: str) -> bool:
 
 def contains_number(haystack: str, number) -> bool:
     pattern = re.compile(rf"(?<!\d){re.escape(str(number))}(?!\d)")
-    return bool(pattern.search(normalize_text(haystack)))
+    return any(pattern.search(reading) for reading in number_readings(haystack))
