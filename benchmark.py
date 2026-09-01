@@ -19,6 +19,9 @@ from canit.metadata import build_metadata, utc_now
 from canit.report.terminal import render_progress, render_summary
 from canit.results import build_results, default_output_path, save_results
 from canit.scenarios.suite import ALL_SCENARIOS, CATEGORIES
+from canit.trace import TERMINATION_CLIENT_ERROR, TERMINATION_TIMEOUT
+
+ENDPOINT_FAILURES = frozenset({TERMINATION_CLIENT_ERROR, TERMINATION_TIMEOUT})
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -172,14 +175,21 @@ def main(argv=None) -> int:
     destination = args.output or default_output_path(metadata, args.results_dir)
     path = save_results(document, destination)
 
-    failed = sum(1 for t in traces if t.termination == "client_error")
-    if failed == len(traces):
+    failed = [t for t in traces if t.termination in ENDPOINT_FAILURES]
+    if len(failed) == len(traces):
+        timed_out = sum(1 for t in failed if t.termination == "timeout")
         print(f"\nresults written to {path}", file=sys.stderr)
         print(
-            f"every one of the {failed} runs failed to reach the endpoint. "
+            f"every one of the {len(failed)} runs failed to reach the endpoint. "
             "The scores in this file measure the connection, not the model.",
             file=sys.stderr,
         )
+        if timed_out:
+            print(
+                f"{timed_out} of them timed out after {config.timeout}s. "
+                "If the endpoint is simply slow, raise --timeout.",
+                file=sys.stderr,
+            )
         first = next((t.errors[0] for t in traces if t.errors), None)
         if first:
             print(f"first error: {first['kind']}: {first['message']}", file=sys.stderr)
@@ -190,7 +200,8 @@ def main(argv=None) -> int:
         print(render_summary(document))
     if failed:
         print(
-            f"\nwarning: {failed}/{len(traces)} runs failed to reach the endpoint",
+            f"\nwarning: {len(failed)}/{len(traces)} runs failed to reach the "
+            "endpoint and scored zero for reasons unrelated to the model",
             file=sys.stderr,
         )
     print(f"\nresults written to {path}")

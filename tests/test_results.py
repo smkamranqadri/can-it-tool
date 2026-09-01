@@ -642,6 +642,92 @@ def test_benchmark_exits_nonzero_when_every_run_fails_to_connect(
     assert document["runs"][0]["termination"] == "client_error"
 
 
+def test_benchmark_exits_nonzero_when_every_run_times_out(tmp_path, monkeypatch, capsys):
+    """A run where nothing reached the model is not a measurement of the model.
+
+    Regression: only client_error was counted, so an endpoint that timed out on every
+    request produced a confident summary of zeros and exit code 0.
+    """
+    from canit.client import ClientTimeout
+
+    class Slow:
+        def complete(self, messages, tools):
+            raise ClientTimeout("request timed out after 0.001s")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("canit.harness.build_client", lambda config, **kw: Slow())
+    code = benchmark_cli.main(
+        [
+            "--base-url", "http://127.0.0.1:9/v1",
+            "--model", "mock",
+            "--runs", "1",
+            "--timeout", "0.5",
+            "--scenario", "sr-01-class-roster",
+            "--output", str(tmp_path / "x.json"),
+            "--quiet",
+        ]
+    )
+
+    assert code == 3
+    err = capsys.readouterr().err
+    assert "measure the connection, not the model" in err
+    assert "raise --timeout" in err
+
+    document = load_results(tmp_path / "x.json")
+    assert document["runs"][0]["termination"] == "timeout"
+
+
+def test_benchmark_warns_but_succeeds_when_only_some_runs_fail(
+    tmp_path, monkeypatch, capsys
+):
+    from canit.client import ClientTimeout
+
+    suite_client = _SuiteClient()
+
+    class Flaky:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, messages, tools):
+            self.calls += 1
+            if self.calls == 1:
+                raise ClientTimeout("slow")
+            return suite_client.complete(messages, tools)
+
+        def close(self):
+            pass
+
+    flaky = Flaky()
+    monkeypatch.setattr("canit.harness.build_client", lambda config, **kw: flaky)
+    code = benchmark_cli.main(
+        [
+            "--base-url", "http://127.0.0.1:9/v1",
+            "--model", "mock",
+            "--runs", "1",
+            "--scenario", "sr-01-class-roster",
+            "--scenario", "nt-02-arithmetic",
+            "--output", str(tmp_path / "x.json"),
+            "--quiet",
+        ]
+    )
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "1/2 runs failed to reach the endpoint" in captured.err
+    assert "HEADLINE" in captured.out
+
+
+def test_endpoint_failure_terminations_are_both_counted():
+    from canit.trace import TERMINATION_CLIENT_ERROR, TERMINATION_TIMEOUT
+
+    assert benchmark_cli.ENDPOINT_FAILURES == {
+        TERMINATION_CLIENT_ERROR,
+        TERMINATION_TIMEOUT,
+    }
+
+
 class _SuiteClient:
     """Dispatches to the right oracle based on the user prompt, like a real server."""
 

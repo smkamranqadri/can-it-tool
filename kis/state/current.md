@@ -1,14 +1,14 @@
 # Current State
 
 Branch: main
-Task: Phase 5 - CLIs, results JSON, comparison. Complete, awaiting review before Phase 6.
+Task: Phase 5.5 - real-model validation. Complete, awaiting review before Phase 6.
 Mode: Phase
 Status: done, blocked on user review
 Command: `uv run --with pytest --with httpx --python 3.14 pytest -q`
 
 ## Proof
 
-- `pytest -q` - 320 passed (61 sim, 42 runner, 14 client, 50 scoring, 96 scenarios, 57 results)
+- `pytest -q` - 323 passed (61 sim, 42 runner, 14 client, 50 scoring, 96 scenarios, 60 results)
 - Phase 2: the loop terminates for exactly four reasons - final_answer, max_steps,
   timeout, client_error - and nothing the model emits can terminate it. Malformed
   arguments, invented tool names, and tool errors are recorded as benchmark
@@ -25,6 +25,11 @@ Command: `uv run --with pytest --with httpx --python 3.14 pytest -q`
 - Phase 5: `benchmark.py` and `compare.py` driven end to end over real HTTP against
   three mock OpenAI-compatible servers, producing schema 1.0 results files and a
   comparison that disqualifies the unsafe model from the recommendation.
+- Phase 5.5: validated against a real model. llama-server b10360-48d22e295 serving
+  qwen2.5-0.5b-instruct-q8_0.gguf, -c 32768 -ngl all --flash-attn on --jinja, at
+  127.0.0.1:8080. Full suite runs=1: overall 0.407, raw 0.465, pass 22.2%, safety
+  failure 13.0%, hallucinated-tool 0.0%, 133.8 tok/s server-reported. Results at
+  `results/qwen2.5-0.5b-q8-real.json`.
 - Simulator is deterministic: `build_dataset()` is equal across builds, simulated
   today is Monday 2025-05-12, 48 students / 24 assignments / 192 submissions.
 - Seeded scenario facts verified: Ahmed Raza (STU-0017) is present today; two
@@ -34,14 +39,36 @@ Command: `uv run --with pytest --with httpx --python 3.14 pytest -q`
 
 ## Blocker
 
-None. Waiting for the user to review Phase 5 before Phase 6 (static results page).
+None. Waiting for the user to review Phase 5.5 before Phase 6 (static results page).
 
 ## Next
 
 Phase 6: a static HTML results page generated from the results JSON, secondary to
-the CLI. Also still open: run the benchmark against a real local model rather than
-the mock servers, which is the first thing that will exercise real tool-call
-formatting quirks.
+the CLI.
+
+## Verified against llama.cpp
+
+Confirmed on the wire, not assumed: native `tools` are sent (8.2 KB request for 13
+tools, ~2060 prompt tokens); `message.tool_calls` parses; `function.arguments` always
+arrives as a JSON string; llama.cpp emits `content: ""` rather than null alongside
+tool calls, and never both non-empty; our `role: tool` message with `name` and
+`tool_call_id` is accepted by the jinja template; server `timings` give genuine
+`predicted_per_second`. Across 54 runs there were zero parse errors, zero missing
+tool-call ids, and zero transport errors.
+
+Not exercised by this runtime, so still only unit-tested: a runtime that returns
+assistant text and tool calls together, malformed JSON arguments from a real model,
+and max_steps termination (Qwen2.5-0.5B never exceeded 2 tool calls).
+
+## Known suite weakness found in Phase 5.5
+
+`sr-02-timetable-tomorrow` cannot distinguish the right day from the wrong one
+through its answer checks alone: 7A's Monday and Tuesday timetables both contain
+Urdu, English and Science and neither contains Mathematics. The model fetched
+`day: "today"` and still scored 1.0 on `final_answer_factual`. The scenario still
+failed overall, because `correct_tool_arguments` caught the wrong day, so the verdict
+was right for the wrong reason. Tighten the answer check to a Tuesday-specific fact
+(first period is Urdu on Tuesday, English on Monday) in a later suite pass.
 
 ## Known suite limitation
 
