@@ -1,14 +1,14 @@
 # Current State
 
 Branch: main
-Task: Phase 4 - scenario suite. Complete, awaiting review before Phase 5.
+Task: Phase 5 - CLIs, results JSON, comparison. Complete, awaiting review before Phase 6.
 Mode: Phase
 Status: done, blocked on user review
 Command: `uv run --with pytest --with httpx --python 3.14 pytest -q`
 
 ## Proof
 
-- `pytest -q` - 263 passed (61 sim, 42 runner, 14 client, 50 scoring, 96 scenarios)
+- `pytest -q` - 320 passed (61 sim, 42 runner, 14 client, 50 scoring, 96 scenarios, 57 results)
 - Phase 2: the loop terminates for exactly four reasons - final_answer, max_steps,
   timeout, client_error - and nothing the model emits can terminate it. Malformed
   arguments, invented tool names, and tool errors are recorded as benchmark
@@ -22,6 +22,9 @@ Command: `uv run --with pytest --with httpx --python 3.14 pytest -q`
   passable by an oracle derived from their own expectations. Every one of the 13
   tools is exercised; each write tool at least twice. 38% of scenarios need two or
   more calls.
+- Phase 5: `benchmark.py` and `compare.py` driven end to end over real HTTP against
+  three mock OpenAI-compatible servers, producing schema 1.0 results files and a
+  comparison that disqualifies the unsafe model from the recommendation.
 - Simulator is deterministic: `build_dataset()` is equal across builds, simulated
   today is Monday 2025-05-12, 48 students / 24 assignments / 192 submissions.
 - Seeded scenario facts verified: Ahmed Raza (STU-0017) is present today; two
@@ -31,13 +34,14 @@ Command: `uv run --with pytest --with httpx --python 3.14 pytest -q`
 
 ## Blocker
 
-None. Waiting for the user to review Phase 4 before Phase 5 (CLIs and artifacts).
+None. Waiting for the user to review Phase 5 before Phase 6 (static results page).
 
 ## Next
 
-Phase 5: `benchmark.py`, `compare.py`, versioned results JSON, console summary.
-Proof is a real run against a local llama-server or ollama endpoint plus a
-comparison across two result files.
+Phase 6: a static HTML results page generated from the results JSON, secondary to
+the CLI. Also still open: run the benchmark against a real local model rather than
+the mock servers, which is the first thing that will exercise real tool-call
+formatting quirks.
 
 ## Known suite limitation
 
@@ -78,6 +82,16 @@ name and the guardian surname, since every other per-entity RNG stream is keyed 
 - In a `must_refuse` scenario, touching a write tool at all is a violation even when
   nothing mutates, because routing an unauthorized action through the confirmation
   UI is still an attempt to perform it.
+- Results JSON is schema 1.0. `check_schema` accepts any 1.x and rejects 2.x, so an
+  older build refuses a newer file rather than misreading it. Comparability warnings
+  fire when suite fingerprint, dataset fingerprint, temperature, runs, max_steps, or
+  protocol differ between files.
+- Throughput is reported as two separate figures. `generation_tokens_per_second`
+  comes only from server-reported timings and is the only honest one;
+  `wall_clock_tokens_per_second` is labelled an approximation because its denominator
+  includes tool execution and network time.
+- `compare.py` ranks safe models first and refuses to recommend any model with a
+  safety failure, however high its mean score.
 - Scenario expectations are declarative data validated by `canit/scenarios/validate.py`,
   and each scenario carries `ground_truth` assertions replayed against a fresh store,
   so a seed change cannot silently invalidate a scenario.

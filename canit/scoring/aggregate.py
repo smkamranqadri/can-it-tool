@@ -62,7 +62,6 @@ def summarize(scores, traces=None) -> dict:
 
     traces = traces or []
     latencies = [t.total_latency_ms for t in traces]
-    throughput = [t.tokens_per_second() for t in traces]
 
     summary = {
         "runs": len(scores),
@@ -91,7 +90,14 @@ def summarize(scores, traces=None) -> dict:
             "p50": _percentile(latencies, 0.50),
             "p95": _percentile(latencies, 0.95),
         }
-        summary["tokens_per_second"] = _mean(throughput)
+        server_speed = _mean(t.server_tokens_per_second() for t in traces)
+        summary["generation_tokens_per_second"] = server_speed
+        summary["wall_clock_tokens_per_second"] = _mean(
+            t.wall_clock_tokens_per_second() for t in traces
+        )
+        summary["tokens_per_second_source"] = "server_timings"
+        if server_speed is None:
+            summary["tokens_per_second_source"] = None
         usage = [t.usage_totals() for t in traces]
         reported = [u for u in usage if u]
         if reported:

@@ -484,10 +484,10 @@ def test_usage_and_timings_are_captured_and_totalled(config):
         "completion_tokens": 50,
         "total_tokens": 350,
     }
-    assert trace.tokens_per_second() == 50.0
+    assert trace.server_tokens_per_second() == 50.0
 
 
-def test_tokens_per_second_falls_back_to_wall_clock_when_no_timings(config):
+def test_wall_clock_throughput_is_reported_separately_from_generation_speed(config):
     response = ChatResponse(
         message={"role": "assistant", "content": "done"},
         content="done",
@@ -496,7 +496,8 @@ def test_tokens_per_second_falls_back_to_wall_clock_when_no_timings(config):
         latency_ms=1000.0,
     )
     trace, _ = run_scenario(config, ScriptedClient([response]), scenario())
-    assert trace.tokens_per_second() == pytest.approx(100.0)
+    assert trace.server_tokens_per_second() is None
+    assert trace.wall_clock_tokens_per_second() == pytest.approx(100.0)
 
 
 def test_usage_is_empty_when_the_server_reports_none(config):
@@ -504,7 +505,8 @@ def test_usage_is_empty_when_the_server_reports_none(config):
     trace, _ = run_scenario(config, client, scenario())
 
     assert trace.usage_totals() == {}
-    assert trace.tokens_per_second() is None
+    assert trace.server_tokens_per_second() is None
+    assert trace.wall_clock_tokens_per_second() is None
 
 
 def test_trace_serializes_to_json(config):

@@ -97,16 +97,29 @@ class Trace:
             return {}
         return totals
 
-    def tokens_per_second(self) -> float | None:
-        """Prefer server-reported generation timings; fall back to wall clock."""
+    def server_tokens_per_second(self) -> float | None:
+        """Generation speed as the serving runtime itself measured it.
+
+        This is the only honest throughput figure. It is present only when the server
+        reports per-request timings, as llama.cpp does; most OpenAI-compatible servers
+        do not.
+        """
         reported = [
             s.timings.get("predicted_per_second")
             for s in self.steps
             if s.timings and isinstance(s.timings.get("predicted_per_second"), (int, float))
         ]
-        if reported:
-            return sum(reported) / len(reported)
+        if not reported:
+            return None
+        return sum(reported) / len(reported)
 
+    def wall_clock_tokens_per_second(self) -> float | None:
+        """Completion tokens over total round-trip time.
+
+        An approximation, and always an underestimate of generation speed: the
+        denominator includes queueing, prompt processing, network, and this harness's
+        own tool execution. Never present it as the model's generation speed.
+        """
         usage = self.usage_totals()
         completion = usage.get("completion_tokens", 0)
         if not completion or self.total_latency_ms <= 0:
@@ -116,6 +129,7 @@ class Trace:
     def to_dict(self) -> dict:
         payload = asdict(self)
         payload["usage_totals"] = self.usage_totals()
-        payload["tokens_per_second"] = self.tokens_per_second()
+        payload["server_tokens_per_second"] = self.server_tokens_per_second()
+        payload["wall_clock_tokens_per_second"] = self.wall_clock_tokens_per_second()
         payload["tool_sequence"] = self.tool_sequence
         return payload
