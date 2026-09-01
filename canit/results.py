@@ -78,6 +78,7 @@ def default_output_path(metadata: dict, directory: str | Path = "results") -> Pa
 def comparability(documents: list[dict]) -> list[str]:
     """Warnings that make two result files not directly comparable."""
     warnings = []
+    versions = {d["metadata"]["suite"].get("version", "unknown") for d in documents}
     suites = {d["metadata"]["suite"]["suite_fingerprint"] for d in documents}
     datasets = {d["metadata"]["suite"]["dataset_fingerprint"] for d in documents}
     temperatures = {d["metadata"]["temperature"] for d in documents}
@@ -86,6 +87,11 @@ def comparability(documents: list[dict]) -> list[str]:
     counts = {d["metadata"]["suite"]["scenario_count"] for d in documents}
     protocols = {d["metadata"]["protocol"] for d in documents}
 
+    if len(versions) > 1:
+        warnings.append(
+            f"scenario suite versions differ: {sorted(versions)}; a scenario change "
+            "alters what a score means"
+        )
     if len(suites) > 1:
         warnings.append(
             "scenario suites differ between files; scores are not directly comparable"

@@ -460,3 +460,121 @@ def test_redundancy_is_bounded_and_explained(report):
             "ac-01-which-sara-fees",
             "ac-03-which-sara-maths",
         }, pair
+
+
+# --- suite 1.1.0: sr-02 must not pass on the wrong day ----------------------
+
+
+def _wrong_day_run(config):
+    """A model that fetches today's timetable and reports it faithfully."""
+    from canit.client import ScriptedClient, assistant_payload
+    from canit.sim.db import Store
+    from canit.sim.tools import execute
+
+    scenario = by_id("sr-02-timetable-tomorrow")
+    monday = execute(Store(), "get_timetable", {"class_name": "7A", "day": "today"})
+    subjects = ", ".join(p["subject"] for p in monday["periods"])
+    answer = f"Class 7A on {monday['day']}: {subjects}."
+
+    script = [
+        assistant_payload(
+            tool_calls=[("c1", "get_timetable", json.dumps({"class_name": "7A", "day": "today"}))]
+        ),
+        assistant_payload(content=answer),
+    ]
+    trace, _ = run_scenario(config, ScriptedClient(script), scenario)
+    return score_run(trace, scenario), monday
+
+
+def test_the_two_days_share_a_subject_set_so_only_the_day_label_separates_them():
+    from canit.sim.db import Store
+    from canit.sim.tools import execute
+
+    store = Store()
+    monday = execute(store, "get_timetable", {"class_name": "7A", "day": "Monday"})
+    tuesday = execute(store, "get_timetable", {"class_name": "7A", "day": "tomorrow"})
+
+    assert {p["subject"] for p in monday["periods"]} == {
+        p["subject"] for p in tuesday["periods"]
+    }
+    assert tuesday["day"] == "Tuesday"
+    assert monday["periods"][0]["subject"] != tuesday["periods"][0]["subject"]
+
+
+def test_sr02_factual_check_rejects_mondays_timetable(config):
+    """Regression for suite 1.1.0.
+
+    Before the fix, fetching 'today' returned Monday's timetable and still scored 1.0
+    on final_answer_factual, because 7A's two days share a subject set.
+    """
+    score, monday = _wrong_day_run(config)
+
+    assert monday["day"] == "Monday"
+    assert score.score_of("final_answer_factual") < 1.0
+    assert score.score_of("correct_tool_arguments") == 0.0
+    assert score.task_completed == 0
+    assert score.scenario_pass is False
+
+
+def test_sr02_factual_check_still_credits_tuesday(config):
+    scenario = by_id("sr-02-timetable-tomorrow")
+    trace, _ = run_scenario(config, oracle_client(scenario), scenario)
+    score = score_run(trace, scenario)
+
+    assert score.score_of("final_answer_factual") == 1.0
+    assert score.final_score == 1.0
+
+
+def test_suite_version_is_recorded_in_metadata():
+    from canit.metadata import build_metadata
+    from canit.config import RunConfig
+    from canit.scenarios.suite import SUITE_VERSION
+
+    metadata = build_metadata(
+        RunConfig(base_url="http://x/v1", model="m"), ALL_SCENARIOS
+    )
+    assert metadata["suite"]["version"] == SUITE_VERSION
+
+
+def test_a_suite_version_change_is_flagged_as_not_comparable():
+    from canit.results import comparability
+
+    def document(version):
+        return {
+            "metadata": {
+                "temperature": 0.0,
+                "runs_per_scenario": 1,
+                "max_steps": 8,
+                "protocol": "native",
+                "suite": {
+                    "version": version,
+                    "suite_fingerprint": "same",
+                    "dataset_fingerprint": "same",
+                    "scenario_count": 54,
+                },
+            }
+        }
+
+    warnings = comparability([document("1.0.0"), document("1.1.0")])
+    assert any("suite versions differ" in w for w in warnings)
+    assert comparability([document("1.1.0"), document("1.1.0")]) == []
+
+
+def test_missing_suite_version_degrades_gracefully():
+    from canit.results import comparability
+
+    old = {
+        "metadata": {
+            "temperature": 0.0,
+            "runs_per_scenario": 1,
+            "max_steps": 8,
+            "protocol": "native",
+            "suite": {
+                "suite_fingerprint": "same",
+                "dataset_fingerprint": "same",
+                "scenario_count": 54,
+            },
+        }
+    }
+    warnings = comparability([old])
+    assert warnings == []

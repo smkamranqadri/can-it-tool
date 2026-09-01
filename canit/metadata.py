@@ -87,6 +87,7 @@ def build_metadata(
     finished_at: str | None = None,
     duration_seconds: float | None = None,
 ) -> dict:
+    from .scenarios.suite import SUITE_VERSION
     from .sim.db import dataset_fingerprint
 
     return {
@@ -122,6 +123,7 @@ def build_metadata(
         "extra_body": config.extra_body,
         "host": host_info(),
         "suite": {
+            "version": SUITE_VERSION,
             "scenario_count": len(scenarios),
             "suite_fingerprint": suite_fingerprint(scenarios),
             "dataset_fingerprint": dataset_fingerprint(),

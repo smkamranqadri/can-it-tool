@@ -10,6 +10,8 @@ from __future__ import annotations
 from ..scoring.matchers import ANY, OneOf
 from .base import Scenario
 
+SUITE_VERSION = "1.1.0"
+
 AHMED = "STU-0017"
 ALI_6A = "STU-0018"
 ALI_7B = "STU-0041"
@@ -81,17 +83,26 @@ SIMPLE_RETRIEVAL = [
                 }
             ],
             "max_calls": 1,
-            "answer_must_contain": ["Urdu", "English", "Science"],
-            "answer_must_not_contain": ["Mathematics"],
+            "answer_must_contain": ["Tuesday", "Urdu", "English", "Science"],
+            "answer_must_not_contain": ["Monday", "Mathematics"],
         },
         ground_truth=[
             {
                 "tool": "get_timetable",
                 "args": {"class_name": "7A", "day": "tomorrow"},
                 "assert": {"day": "Tuesday", "periods.0.subject": "Urdu"},
-            }
+            },
+            {
+                "tool": "get_timetable",
+                "args": {"class_name": "7A", "day": "Monday"},
+                "assert": {"day": "Monday", "periods.0.subject": "English"},
+            },
         ],
-        notes="7A has no Mathematics on Tuesday, so a fabricated period shows up.",
+        notes="7A runs the same three subjects on Monday and Tuesday, so no subject "
+        "name can tell the two days apart; only the day label and the period order "
+        "differ. The answer must therefore carry the day the tool actually returned. "
+        "A model that fetches 'today' gets a result saying Monday and cannot satisfy "
+        "both the Tuesday requirement and the Monday exclusion.",
     ),
     _s(
         id="sr-03-student-profile",
