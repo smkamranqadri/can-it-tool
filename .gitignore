@@ -1,8 +1,47 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Environments
 .venv/
+venv/
+.env
+.env.*
+
+# Tooling caches
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Model weights: never commit these. They are gigabytes and are not ours to
+# redistribute. Point --base-url at a server that has already loaded one.
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+models/
+
+# Benchmark output. Runs are large (roughly 1 MB per model at runs=1, because
+# every trace is retained) and are reproducible from the CLI. Published runs
+# belong on a GitHub Release, not in git history.
 results/*.json
 results/*.html
+
+# Local server logs and scratch
+*.log
+scratch/
+tmp/
+
+# OS and editor
 .DS_Store
-!results/.gitkeep
+Thumbs.db
+.idea/
+.vscode/
+*.swp
