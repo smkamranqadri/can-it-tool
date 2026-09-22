@@ -17,8 +17,11 @@ The Laya adapters need `laya` (torch, transformers) in their own environment, no
 project's:
 
 ```bash
-uv venv --python 3.12 .laya-venv && VIRTUAL_ENV=.laya-venv uv pip install laya
+uv venv --python 3.12 .laya-venv && VIRTUAL_ENV=$PWD/.laya-venv uv pip install laya
 ```
+
+The runs in `kis/knowledge/benchmarks.md` used llama.cpp b11100, not Homebrew's older
+build: `LLAMA=~/.local/opt/llama-b11100/llama-server scripts/run_cpu.sh ...`.
 
 ## scripts/
 

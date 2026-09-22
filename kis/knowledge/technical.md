@@ -3,7 +3,10 @@
 ## Environment
 
 macOS arm64, Python 3.14.6, `uv` for dependency management.
-Local runtimes already installed: `llama-server`, `ollama`, `mlx_lm.server`.
+Local runtimes already installed: `llama-server`, `ollama`, `mlx_lm.server`. Homebrew's
+llama-server is b10360 and much slower; the build these results use is
+`~/.local/opt/llama-b11100/llama-server` (pass it as `LLAMA=`). The Laya adapters run from
+`.laya-venv/` in the repo (gitignored, `uv venv --python 3.12 .laya-venv && VIRTUAL_ENV=$PWD/.laya-venv uv pip install laya`).
 Bench machine: Apple M2 Pro (8 performance + 4 efficiency cores), 32 GB. Model files
 live in `~/models`, never in the repo.
 

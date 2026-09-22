@@ -36,5 +36,3 @@ None. Phase 6 (static results page) is parked while the deployment setup is sett
 4. Port `scripts/run_cpu.sh` and `scripts/load_cpu.sh` to bash, then repeat the shortlist
    and load test on the target (Omarchy, Ryzen 5 PRO 3400G, 16 GB); try the Vulkan build on
    the Vega 11 iGPU and Q4_0 there.
-5. Commit `adapters/` and `scripts/` - this session's code is still untracked.
-6. Move the llama.cpp b11100 binary and the Laya venv out of the session scratchpad.
