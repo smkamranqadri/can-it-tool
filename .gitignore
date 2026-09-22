@@ -33,6 +33,12 @@ models/
 # belong on a GitHub Release, not in git history.
 results/*.json
 results/*.html
+results/latency/*.json
+results/latency/mon/
+results/load/
+
+# Separate environment for the Laya adapters (torch is not a project dependency)
+.laya-venv/
 
 # Local server logs and scratch
 *.log

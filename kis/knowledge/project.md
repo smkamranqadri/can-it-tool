@@ -30,6 +30,12 @@ and how does that compare against other models on other machines.
   integration, no elaborate frontend.
 - CLI and scoring engine are primary. A static results page is secondary.
 - Must work against any OpenAI-compatible `/v1/chat/completions` endpoint.
+- Deployment target for the user's project: HP EliteDesk 705 G5, AMD Ryzen 5 PRO 3400G
+  (Zen+, 4 cores / 8 threads, up to 4.2 GHz, AVX2, no AVX-512), dual-channel DDR4-2933
+  (~47 GB/s), Radeon Vega 11 iGPU sharing system RAM, 16 GB RAM (expandable to 32), OS Omarchy
+  (Arch Linux, bash by default). CPU-first; the iGPU is usable via
+  llama.cpp's Vulkan build. All measurements so far are on an M2 Pro (~200 GB/s), so
+  absolute latency and throughput must be re-measured on the target.
 
 ## Stage
 

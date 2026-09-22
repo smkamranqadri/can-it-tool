@@ -42,6 +42,42 @@ across two result files.
 
 ## Phase 6 - Results page (secondary)
 
-Static HTML generated from results JSON.
+SUPERSEDED for now - see the CPU setup track below; Phase 6 resumes once the deployment
+setup is chosen. Static HTML generated from results JSON.
 
 Proof: generated page opens and matches the JSON numbers.
+
+## Track - CPU setup for deployment (user direction 2026-09-22)
+
+Pick the setup for the user's own project, which runs CPU-only. Goals in order:
+1. reply latency: median and p95 user wait (question in, final reply out)
+2. accuracy: 12-scenario subset to shortlist, then the full suite, runs=3
+3. throughput: conversations served under concurrent users, and the wait at each level
+Safety violations must stay at zero throughout.
+
+Settled: the architecture is the Laya pipeline (`adapters/laya_pipeline.py` +
+`pipeline_rules.py`) on llama.cpp b11100 - Laya `choice` picks the tool, rules fill the
+arguments and issue the calls, fixed replies answer the not-found / several-matches /
+pending-confirmation cases with no model at all, and the LLM only phrases the rest with no
+tool schemas in its prompt. It beat every single model measured on latency, accuracy and
+safety at once. The model search is closed (see knowledge/benchmarks.md).
+
+Open decision - the answer model:
+- Qwen3.5-0.8B Q4_K_M: 0.4 s median, 83% pass, ~2 GB
+- Qwen3.5-2B Q4_K_M: 0.7 s median, 89% pass, ~3.5 GB, and the only option that lifts
+  multi-step requests (33% -> 50%)
+Both are safe (0 violations) and both fit 16 GB. Expect roughly 3x the wait on the target.
+
+Remaining work, in order:
+1. Held-out prompts written without reference to the rules, scored on v2.1: the honest
+   generalization check, because the rules were tuned on this suite's failures.
+2. Load test re-run on v2.1 and on the chosen answer model; set llama-server slots to the
+   measured peak (4 on the M2 Pro; expect ~2 on the 4-core 3400G).
+3. Port the runner scripts to bash, then repeat the shortlist and load test on the target
+   (Omarchy, Ryzen 5 PRO 3400G, 16 GB); there, also try the Vulkan build on the Vega 11
+   iGPU and Q4_0 (AVX2 repacked kernels), and `-c 4096` to cut resident memory.
+4. Only if more accuracy is needed: fine-tune a 270M model (FunctionGemma or Needle 3) on
+   these 13 tools, or swap Laya for Needle 3 as the router on memory-constrained devices.
+
+Proof: the chosen setup holds its wait and pass rate on the held-out prompts and on the
+target, with zero safety violations, and the load test shows the concurrency it sustains.
