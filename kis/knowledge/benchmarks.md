@@ -78,6 +78,32 @@ The 2B models buy multi_step 33% -> 50% and tool_error 75% -> 100%. Q8_0 quantiz
 nothing over Q4_K_M. Everything below 1B lands at 63-70% whatever the prompt wording.
 minicpm5-1b's 183 s tail came from the uncapped fallback path (capped after run 28).
 
+## The answer-model choice, on current code (MiniLM router, all fixes)
+
+Full suite 54 x 3, T580, `-t 4`, Q4_K_M, provenance-matched GGUFs:
+
+| router + answer model | pass | score | unsafe | p50 | p95 | max | server RSS |
+|---|---|---|---|---|---|---|---|
+| Laya + 0.8B | 79.6% | 0.920 | 0% | 2.03 s | 9.04 s | 23.60 s | 3058 MB |
+| Laya + 2B | 87.0% | 0.949 | 0% | 3.32 s | 17.24 s | 48.96 s | 4180 MB |
+| MiniLM + 0.8B | 81.5% | 0.929 | 0% | 0.91 s | 7.54 s | 22.05 s | 3114 MB |
+| MiniLM + 2B | 87.0% | 0.945 | 0% | 2.82 s | 16.85 s | 41.63 s | 4301 MB |
+
+THE BETTER ROUTER NARROWED THE GAP but did not close it: 0.8B went 79.6% -> 81.5% while
+the 2B stayed at 87.0%, so the difference fell from 7.4 points to 5.5. A better router
+recovers some of what a small answer model loses, but not the multi-step reasoning.
+
+WHAT THE 2B BUYS is exactly three scenarios, with no losses:
+`ms-02-7a-science-missing` and `ms-05-compare-both-saras` (both multi_step_chain) and
+`ts-01-grade-not-submission` (tool_selection). This is the same pattern recorded on the M2 -
+the 2B is the size that lifts multi-step requests. So the choice is concrete rather than
+statistical: COMPOUND questions ("who in 7A missed the science homework", "compare the two
+Saras") work with the 2B and fail with the 0.8B; single-fact lookups are equal.
+
+WHAT IT COSTS on this machine: p50 0.91 -> 2.82 s (3.1x), p95 7.54 -> 16.85 s (2.2x),
+max 22.0 -> 41.6 s, and ~1.2 GB more resident. Generation is 14 tok/s against 29, so
+concurrent capacity roughly halves as well.
+
 ## Answer-model quantization: Q4_0 is NOT free (2026-09-23)
 
 Full suite 54 x 3, T580, MiniLM router, Qwen3.5-0.8B, `-t 4`, only the quant changed:

@@ -71,20 +71,18 @@ None. Nothing is half-written; no benchmark processes are running.
       and a LOWER p50 at every level. Routing cost does not register because the bottleneck
       at 4+ users is llama.cpp on four cores. No throughput argument remains for TF-IDF.
 
-2. DECIDE THE ANSWER MODEL. Recommendation: Qwen3.5-2B. It is not just more accurate but
-   more portable - across the two architectures it lost 1.9 points where the 0.8B lost 3.7,
-   so its margin widened from 5.6 to 7.4 points. Cost is the tail, not the median.
-   | model | T580 pass | T580 p50 | T580 p95 | M2 pass | M2 p50 |
-   |---|---|---|---|---|---|
-   | qwen3.5-0.8b | 79.6% | 2.03 s | 9.04 s | 83.3% | 0.36 s |
-   | qwen3.5-2b | 87.0% | 3.32 s | 17.24 s | 88.9% | 0.68 s |
-2. DONE - LFM2.5-350M-Q4_0 tested here, full suite: 61.1% pass, p50 1.24 s, p95 3.61 s,
-   0 unsafe. Fast but 26 points behind the 2B, and its failures are factual (drops list
-   entries; inverted a negation into "Junaid Farooq did not submit" when he did). Not
-   usable for this application. The valuable byproduct is in benchmarks.md: on slow CPUs
-   the ROUTER is the bottleneck, not the answer model - Laya is ~77% of p50 with the 350M,
-   so answer-model shrinking has no headroom left. Making the router cheaper is now plan
-   item 4 and the highest-value remaining speed lever for the target.
+2. DECIDE THE ANSWER MODEL - now measured on current code (MiniLM router, all fixes):
+   | answer model | pass | score | p50 | p95 | max | server RSS |
+   |---|---|---|---|---|---|---|
+   | Qwen3.5-0.8B | 81.5% | 0.929 | 0.91 s | 7.54 s | 22.05 s | 3114 MB |
+   | Qwen3.5-2B | 87.0% | 0.945 | 2.82 s | 16.85 s | 41.63 s | 4301 MB |
+   The 2B buys exactly three scenarios and loses none: `ms-02`, `ms-05` (both
+   multi_step_chain) and `ts-01` (tool_selection). So the question is concrete - do staff
+   ask COMPOUND questions? If yes, the 2B is needed and the 0.8B fails them outright. If
+   the traffic is single-fact lookups, the 0.8B is equal and 3x faster at the median.
+   The better router narrowed the gap from 7.4 points to 5.5 but could not close it.
+   Both are safe (zero violations) and both fit 16 GB.
+
 3. DONE - Q4_0 CHECKED AND REJECTED. Full suite with MiniLM, only the quant changed:
    75.9% against Q4_K_M's 81.5%, score 0.907 against 0.929, and p50 identical at 0.91 s.
    It loses 5.6 points for a tail-only gain. KEEP Q4_K_M, and do not carry Q4_0 to the
