@@ -61,62 +61,33 @@ None. Nothing is half-written; no benchmark processes are running.
 
 ## Next
 
-1. CLASSIFIER ROUTER - remaining polish, none of it blocking:
-   a. DONE for TF-IDF - load test re-run, peak throughput 90.7 -> 277.0 req/min (3.05x) and the
-      median wait under 4-user load 5.78 s -> 1.01 s, zero safety violations at every
-      level. Slots stay at 4; that ceiling is the four cores, not the router.
-   b. DONE for `as-03` - fixed in `policy_refusal`, which is the right layer: a grade
-      change is unsupported however it was routed. Narrow by design so a homework
-      submission score (`wc-04`) is still allowed; verified to fire on `as-03` alone across
-      all 54 prompts, and it took the rules dry-run from 4/5 to 5/5 must-refuse and from
-      15/54 to 17/54 no-LLM answers. NOT gated by router, and re-running Laya confirmed
-      zero scenarios changed for it. `ac-04` is recovered by MiniLM; TF-IDF still misses it.
-   c. DONE - MiniLM beats TF-IDF end-to-end: 79.6% vs 77.8% (it gains `ac-04` and loses
-      nothing), score 0.922, p50 0.97 s vs 1.29 s, at 429 MB vs 127 MB. It matches Laya's
-      pass rate exactly. Standalone the two classifiers TIE at 74.1% and are both wrong on
-      13 of 14 - standalone top-1 is a poor proxy for this pipeline. NOT yet load-tested.
-      Pick TF-IDF if the torch dependency matters, MiniLM otherwise - with the grade rule
-      MiniLM reaches 81.5%, beating Laya outright.
-   d. Export the TF-IDF model to plain numpy so sklearn (202 MB) drops out too.
-   e. DONE - MiniLM load-tested: peak 276.3 req/min against TF-IDF's 277.0, which is noise,
-      and a LOWER p50 at every level. Routing cost does not register because the bottleneck
-      at 4+ users is llama.cpp on four cores. No throughput argument remains for TF-IDF.
+1. DECIDE THE ANSWER MODEL. The only open decision, measured on current code:
+   | answer model | pass | score | p50 | p95 | server RSS |
+   |---|---|---|---|---|---|
+   | Qwen3.5-0.8B | 81.5% | 0.929 | 0.91 s | 7.54 s | 3114 MB |
+   | Qwen3.5-2B | 87.0% | 0.945 | 2.82 s | 16.85 s | 4301 MB |
+   The 2B buys exactly three scenarios and loses none: `ms-02`, `ms-05` (multi_step_chain)
+   and `ts-01` (tool_selection). So it is a concrete question, not a statistical one: if
+   staff ask COMPOUND questions the 0.8B fails them outright; if traffic is single-fact
+   lookups the two are equal and the 0.8B is 3x faster at the median. Both safe, both fit
+   16 GB. The 2B also held its accuracy better across architectures (-1.9 points against
+   -3.7), so it should transfer to the 3400G more predictably.
 
-2. DECIDE THE ANSWER MODEL - now measured on current code (MiniLM router, all fixes):
-   | answer model | pass | score | p50 | p95 | max | server RSS |
-   |---|---|---|---|---|---|---|
-   | Qwen3.5-0.8B | 81.5% | 0.929 | 0.91 s | 7.54 s | 22.05 s | 3114 MB |
-   | Qwen3.5-2B | 87.0% | 0.945 | 2.82 s | 16.85 s | 41.63 s | 4301 MB |
-   The 2B buys exactly three scenarios and loses none: `ms-02`, `ms-05` (both
-   multi_step_chain) and `ts-01` (tool_selection). So the question is concrete - do staff
-   ask COMPOUND questions? If yes, the 2B is needed and the 0.8B fails them outright. If
-   the traffic is single-fact lookups, the 0.8B is equal and 3x faster at the median.
-   The better router narrowed the gap from 7.4 points to 5.5 but could not close it.
-   Both are safe (zero violations) and both fit 16 GB.
+2. REAL PROMPTS from the repo owner or school staff, 20-30. Worth more than hundreds of
+   generated ones, because phrasing distribution is what is under test. These sharpen
+   items 1 and 3 and are the standing ask whenever this is picked up.
 
-3. DONE - Q4_0 CHECKED AND REJECTED. Full suite with MiniLM, only the quant changed:
-   75.9% against Q4_K_M's 81.5%, score 0.907 against 0.929, and p50 identical at 0.91 s.
-   It loses 5.6 points for a tail-only gain. KEEP Q4_K_M, and do not carry Q4_0 to the
-   3400G. The `llama-bench` +23% prompt-processing win did not transfer because the median
-   request is a fixed reply that never calls the LLM.
+3. WRITE/READ BIAS in the routers - see Intent, "Track - replacing the Laya router".
+   Found by the held-out prompts, invisible to the 54-scenario suite, and it reverses the
+   router ranking.
 
-4. HELD-OUT PROMPTS - started, and it already paid off. `scripts/heldout_prompts.py`
-   generates them with the local 2B from plain-English capability descriptions, so the
-   phrasing is independent of our templates. The generated LABELS are too noisy for a
-   headline accuracy number, but the set found a real weakness the suite cannot see: both
-   routers route WRITE requests to READ tools on unfamiliar phrasing (MiniLM 29 of 42,
-   TF-IDF 17 of 42). Fails safe, fails the user, and REVERSES the router ranking.
-   Next: (a) decide whether to fix write-intent promotion in `choose_tool` - note
-   `WRITE_VERBS` contains "record", so a naive rule misfires on "check the record";
-   (b) ask the repo owner or real staff for 20-30 genuine prompts, which are worth more
-   than hundreds of generated ones.
-
-5. The target itself (Ryzen 5 PRO 3400G, 16 GB): shortlist, load test AND a full-suite run,
-   since accuracy does not transfer across architectures. Start from `-t 4`, slots 4, and
-   budget ~2.3 GB for Laya.
+4. THE TARGET ITSELF (Ryzen 5 PRO 3400G, 16 GB): shortlist, load test AND a full-suite run,
+   because accuracy does not transfer across architectures. Start from `-t 4` and slots 4,
+   both measured on a 4c/8t chip. Budget ~430 MB for the MiniLM router, not Laya's 2.3 GB.
 
 ## Optional, not blocking
 
-`performance` governor is untested here (currently `powersave`); the dominant measurement
-problem is +/-12% variance between identical runs, not a ceiling. Repo has unstaged changes
-to `.gitignore`, both scripts and all three KIS layers.
+- `performance` governor is untested here (currently `powersave`). The dominant measurement
+  problem on this machine is +/-12% variance between identical runs, not a ceiling.
+- `adapters/laya_pipeline.py`'s docstring and `adapters/README.md` still describe the
+  pipeline as Laya-routed. Accurate when written, stale now that `minilm` is the default.
