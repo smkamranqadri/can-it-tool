@@ -2,7 +2,13 @@
 
 ## Environment
 
-macOS arm64, Python 3.14.6, `uv` for dependency management.
+Two machines run this harness. Bench machine: macOS arm64 (M2 Pro), Python 3.14.6.
+Second data point: ThinkPad T580, Omarchy (Arch), Python 3.14.7, i7-8650U, 32 GB; there
+`uv` lives in `~/.local/bin` (standalone installer, no sudo), llama.cpp b11100 is the
+`ubuntu-x64` release in `~/.local/opt/llama-b11100/` with the Vulkan build beside it in
+`llama-b11100-vulkan/`, and torch must come from the CPU index
+(`uv pip install torch --index-url https://download.pytorch.org/whl/cpu`) or pip drags in
+~2.5 GB of CUDA wheels for a machine with no NVIDIA GPU. `uv` for dependency management.
 Local runtimes already installed: `llama-server`, `ollama`, `mlx_lm.server`. Homebrew's
 llama-server is b10360 and much slower; the build these results use is
 `~/.local/opt/llama-b11100/llama-server` (pass it as `LLAMA=`). The Laya adapters run from
@@ -121,10 +127,19 @@ The llama.cpp build matters as much as the model: b10360 -> b11100 took Qwen3.5-
 thanks to better cache reuse, generation 48 -> 61 tok/s) at identical accuracy. Spark-X2.5
 needs b10828+. The b11100 binary used is a GitHub release build, not Homebrew's.
 
+`scripts/run_cpu.sh` and `scripts/load_cpu.sh` are bash, not zsh, and are kept
+bash-3.2-safe so macOS runs them unchanged. Every path in them is quoted: zsh does not
+word-split unquoted expansions and bash does, and this repo's own path contains a space
+("side projects"), which silently created stray directories until it was fixed. They now
+take `THREADS` and `DEVFLAGS`, and `run_cpu.sh` samples the adapter's CPU and RSS and
+writes `freq.log` (per-core MHz plus package temperature every second).
+
 Changing the tool list per request (Laya proxy) is slower than sending all 13 every
 time: the tools sit in the cached prefix, so a different subset re-processes it.
 Taking tool calls out of the LLM entirely (Laya pipeline) is what wins: the answer call
-carries no tool schemas at all. On CPU, Q4_0 no longer beats Q4_K_M on b11100, and
+carries no tool schemas at all. On the M2's arm64 CPU, Q4_0 no longer beats Q4_K_M on
+b11100 - but on x86 AVX2 it beats it by 23%+ at prompt processing, see "What is actually
+tunable on a power-limited laptop" below - and
 DSpark speculative decoding slows LFM2.5-8B down (~23% draft acceptance). For Qwen3.5,
 `--reasoning off` halves the wait and did not reduce accuracy at 2B.
 
@@ -139,6 +154,174 @@ when a lookup returns zero or several matches, and claim pending writes were don
 pipeline already knows those states from tool results, so they are candidates for
 deterministic replies rather than model judgment. Gemma 3 270M cannot follow the
 ~400-token rules-style system prompt at all.
+
+## The same model on different CPUs is not the same model
+
+Measured 2026-09-23, M2 Pro against a ThinkPad T580 (i7-8650U): pipeline v2.1 +
+Qwen3.5-0.8B Q4_K_M, identical GGUF, identical llama.cpp b11100, identical suite
+fingerprint a3ea0409449d2580, temperature 0, `--reasoning off`. The M2 scored 83.3% pass /
+0.940; the T580 scored 79.6% / 0.920.
+
+Temperature 0 does NOT make a run reproducible across machines. Four of 54 scenarios
+diverged, each one consistently 0/3 or 3/3 within a machine, so this is deterministic
+per-machine behaviour rather than flakiness. No run timed out; all 162 terminated with
+`final_answer` on both. Two distinct causes:
+
+- ROUTER divergence (1 of the 4): on `sr-05-homeroom-teacher` Laya picked `search_student`
+  on x86 and `get_class_students` on arm64. Laya is a torch forward pass, so different CPU
+  kernels flip a borderline argmax.
+- ANSWER divergence (3 of the 4): `ts-01`, `ms-02` and `tr-02` issued the IDENTICAL tool
+  calls on both machines and still diverged, failing only `task_completion` and
+  `final_answer_factual`. Same tool results, different wording: on `ts-01` the T580 answered
+  "a grade of F" where the M2 answered "43%"; on `ms-02` the T580 listed student IDs where
+  the M2 listed names. llama.cpp's CPU kernels differ between AVX2 and NEON, and the thread
+  count changes reduction order too, so borderline tokens land differently.
+
+Consequences:
+- Accuracy cannot be inherited across machines. The 3400G needs its own full-suite run; it
+  cannot be given either of these numbers.
+- The divergence is small and two-directional - the T580 LOST three scenarios and WON
+  `tr-02` - so it reads as borderline-case noise, not as one machine being worse.
+- Safety was unaffected: zero violations on both. The structural argument holds, because
+  writes are blocked by the rules rather than by model judgement, and the rules are plain
+  Python.
+
+## Why CPU inference is slow on a laptop: two ceilings, measured
+
+Measured on the T580 (i7-8650U, 4c/8t, RAPL PL1 25 W) with `llama-bench` b11100 and purpose-built
+bandwidth microbenchmarks, Qwen3.5-0.8B Q4_K_M (497.39 MiB).
+
+    backend        pp512        tg128
+    CPU -t 4       126.5 t/s    31.8 t/s
+    Vulkan iGPU     63.0 t/s    12.9 t/s
+
+CEILING 1 - memory bandwidth. Read-only bandwidth measures 7.4 / 14.3 / 26.1 / 28.5 GB/s at
+1 / 2 / 4 / 8 threads. Generation streams every weight per token: 31.8 t/s x 0.5215 GB =
+16.6 GB/s, so it runs at 58% of the 28.5 GB/s ceiling. Bandwidth-influenced, NOT saturated.
+For contrast the M2 Pro generates 94.9 t/s = 49.5 GB/s against ~200 GB/s, about 25%, so the
+Mac is not bandwidth-bound at all. That is why the machines differ by 3.6x rather than the
+10x their bandwidth specs imply.
+
+CEILING 2 - the power budget (RAPL PL1 = 25 W sustained, PL2 = 44 W burst; the 15 W
+nominal TDP is NOT the configured limit). Per-core clock collapses as cores engage: median
+3512 MHz at one thread, 2200 MHz at four (peaks 4006 and 3484). That predicts the observed
+scaling almost exactly - 4 cores x (2200/3512) = 2.5x against 2.19x measured for pp512.
+Prompt processing is compute-bound and pays this in full.
+
+CAUTION on measuring bandwidth: a STREAM triad reports 19.0 GB/s here, which looks like
+single-channel DDR4-2400 (19.2 GB/s) and briefly led to a wrong "this machine is
+single-channel" conclusion. The triad counts 24 bytes per iteration while the hardware
+moves ~32, because the write pulls a read-for-ownership. Use a read-only benchmark to judge
+channel configuration. 28.5 GB/s read is comfortably above single-channel ceiling, so this
+machine is dual-channel and healthy.
+
+Implication for the 3400G target: dual-channel DDR4-2933 is ~47 GB/s theoretical, perhaps
+~35 GB/s achievable, roughly 23% over the T580, and at 65 W it will not lose 37% of its
+clock under all-core load. Expect it to sit much closer to the M2 than the T580 does.
+
+## What is actually tunable on a power-limited laptop, measured
+
+MEASUREMENT NOISE FIRST. Back-to-back `llama-bench` runs of an IDENTICAL config returned
+pp512 of 126.7, 112.9 (+/- 13.6) and 96.8 on the same machine. That is +/-12%, wider than
+most flag effects. Any A/B here must run BOTH arms inside ONE `llama-bench` invocation, and
+ideally in both orders, or it measures the boost state rather than the flag.
+
+Throttling is POWER, not heat. RAPL reports PL1 25 W / PL2 44 W, while package temperature
+under sustained load reached only 71-72 C against a ~100 C trip. So clocks collapse
+(3512 MHz at one thread, 2200 MHz at four) because the package is at its power limit with
+thermal headroom to spare. Governor is `powersave` under intel_pstate with EPP
+`performance`. Both levers need root and were NOT tested:
+  - `cpupower frequency-set -g performance`
+  - raise PL1: `echo 35000000 > /sys/class/powercap/intel-rapl:0/constraint_0_power_limit_uw`
+RAISING PL1 WAS TESTED AND DID NOT WORK. PL1 was raised 25 W -> 35 W on the live machine
+and the 12-scenario workload re-run: p50 3.5 s -> 3.8 s, p95 8.2 -> 8.7, max 9.7 -> 13.0,
+29 -> 26 tok/s, and the run's own freq.log recorded a LOWER sustained clock (2027 ->
+1856 MHz). No gain, slightly worse, i.e. noise.
+
+The reason is the PL1 TIME WINDOW: 64 seconds (`constraint_0_time_window_us` = 63963136).
+This workload is bursty - requests of 1-4 s separated by gaps - so the 64-second rolling
+average never approaches 25 W and PL1 never binds. PL2 governs the bursts at 44 W over a
+2.4 ms window and was already generous. Raising a limit that is not binding changes
+nothing.
+
+So do NOT buy a larger PSU for this. The 2200 MHz figure measured during a sustained
+`llama-bench` prompt run is real but does not describe the deployed workload, which never
+runs long enough to be power-limited. Micro-benchmarks can be power-limited while the
+actual application is not; measure the application.
+
+The `performance` governor remains untested and is the remaining candidate, since the
+dominant problem is VARIANCE (+/-12% between identical runs) from reactive P-state
+selection rather than a ceiling.
+
+Why one core cannot saturate memory: a single thread reads 7.4 GB/s of the 28.5 GB/s the
+machine can sustain. That is the classic memory-level-parallelism limit - roughly 10
+outstanding line-fill buffers x 64 B / ~90 ns latency = ~7 GB/s. It takes 4 threads to
+approach the bus. And 28.5 GB/s against DDR4-2400 dual channel's 38.4 GB/s theoretical is
+74%, which is near the practical ceiling for DRAM once refresh and row misses are counted.
+There is no bandwidth being "left on the table" to reclaim with flags.
+
+FLAGS THAT DID NOTHING (all inside the noise floor): CPU pinning with `-C 0x0F
+--cpu-strict 1`, KV cache quantization `-ctk q8_0`, `-lm mlock`, and `-ub` 256/512/1024/2048.
+`--prio` needs root. Note the physical cores here are CPUs 0-3, siblings (0,4)(1,5)(2,6)
+(3,7): a 0x55 mask picks two physical cores plus their siblings and HALVES prompt speed.
+
+THE ONE FLAG THAT WORKED - Q4_0 over Q4_K_M, +23% prompt processing on AVX2:
+
+    order                       Q4_0 pp512    Q4_K_M pp512
+    Q4_K_M first                 118.89          96.80
+    Q4_0 first                   146.51          94.50
+
+Both orders agree and the first penalizes Q4_0, so +23% is the conservative floor.
+Generation is a wash (~29-31 t/s either way; Q4_0's file is larger, 526 vs 497 MiB, which
+costs back some bandwidth). llama.cpp repacks Q4_0 into integer AVX2 kernels at load.
+
+THIS CONTRADICTS the earlier note that "on CPU, Q4_0 no longer beats Q4_K_M on b11100" -
+that was measured on the M2, which is arm64. On x86 AVX2 Q4_0 clearly wins prompt
+processing, and prompt processing is 60-75% of CPU wait. The 3400G is also x86 AVX2, so
+this should carry to the target. NOT YET VALIDATED FOR ACCURACY: Q4_0 is a coarser quant
+than Q4_K_M and no full-suite run has been done with it. Speed without that check is not
+a recommendation.
+
+TRAP - op offload. Running the Vulkan build with `-ngl 0` does NOT give a clean CPU run:
+llama.cpp still offloads large matmuls to the device, costing pp512 50.2 against 74.9 with
+`-nopo 1`. For CPU measurements use the CPU-only build, or `--device none` as
+`scripts/run_cpu.sh` already does.
+
+## Why an iGPU does not accelerate this workload
+
+llama.cpp's Vulkan probe on the UHD 620 states the reasons:
+
+    uma: 1 | fp16: 1 | bf16: 0 | int dot: 0 | matrix cores: none
+
+- `uma: 1` - the iGPU shares the SAME system DDR4. Generation is bandwidth-bound work, so
+  there is no bandwidth to be won; measured 12.9 t/s against the CPU's 31.8.
+- `int dot: 0` - no `VK_KHR_shader_integer_dot_product`. Q4_K_M matmul leans on integer dot
+  products; without them the shaders dequantize to float and do far more work per weight.
+- `matrix cores: none` - no cooperative-matrix support, so llama.cpp's fast Vulkan GEMM
+  path is unavailable and prompt processing falls back to a generic kernel: 63 t/s against
+  the CPU's 126.
+- Shared package power (PL1 25 W): CPU clock averaged 1472 MHz during the Vulkan run, the lowest
+  of any run measured, because the GPU draws from the same budget.
+
+Partial offload does not rescue it. Sweeping `-ngl` on the UHD 620 (low variance, +/-0.7):
+
+    ngl      pp512     tg128
+      0      47.83     31.66
+      8      49.56     15.98
+     16      64.80     14.85
+     24      65.35     13.22
+     99      65.06     12.74
+
+Generation degrades MONOTONICALLY with every layer moved to the GPU - 31.7 down to 12.7 -
+so there is no hybrid split that helps it. Prompt processing does improve and saturates
+around 16-24 layers, but its best, 65.4 t/s, is still barely half the CPU-only build's
+119-147 t/s on Q4_0. On this machine the iGPU has no winning configuration.
+
+This does NOT transfer to Vega 11 on the target. Vega 11 has roughly 4x the FP32
+throughput, does support integer dot products, and runs RADV rather than ANV, so PROMPT
+PROCESSING should genuinely improve there. Generation will not, because Vega 11 still
+shares system memory. Since prompt processing is 60-75% of CPU wait, the iGPU is still
+worth testing on the target - just not for the reason this result would suggest.
 
 ## Concurrency and the fallback path
 

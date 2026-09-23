@@ -78,6 +78,162 @@ The 2B models buy multi_step 33% -> 50% and tool_error 75% -> 100%. Q8_0 quantiz
 nothing over Q4_K_M. Everything below 1B lands at 63-70% whatever the prompt wording.
 minicpm5-1b's 183 s tail came from the uncapped fallback path (capped after run 28).
 
+## Second CPU data point: ThinkPad T580 (2026-09-23)
+
+Intel i7-8650U (4c/8t, 15 W nominal TDP but RAPL PL1 is set to 25 W, base 1.9 GHz,
+turbo 4.2), 32 GB DDR4 dual channel, 28.5 GB/s measured read bandwidth, UHD 620,
+Omarchy. Same llama.cpp b11100 (`ubuntu-x64` release), same GGUFs as the M2 runs, suite
+1.1.0 fingerprint a3ea0409449d2580, temperature 0, `--reasoning off`, pipeline v2.1.
+
+This laptop cannot hold its clock under sustained load: runs sustained 1.5-2.0 GHz, at or
+below its 1.9 GHz base, at 71-72 C. These numbers are therefore a PESSIMISTIC BOUND for the
+65 W 3400G, not an estimate of it. `run_cpu.sh` records the clock in `freq.log`.
+Raising PL1 to 35 W was TESTED and did not help, because PL1 averages over 64 s and this
+workload is bursty - see technical.md. Do not buy a larger PSU for this.
+
+### Full suite, 54 x 3
+
+| machine | answer model | pass | score | unsafe | p50 | p95 | max |
+|---|---|---|---|---|---|---|---|
+| M2 Pro | qwen3.5-0.8b | 83.3% | 0.940 | 0% | 0.36 s | 2.66 s | 4.45 s |
+| M2 Pro | qwen3.5-2b | 88.9% | 0.954 | 0% | 0.68 s | 3.82 s | 9.86 s |
+| T580 | qwen3.5-0.8b | 79.6% | 0.920 | 0% | 2.03 s | 9.04 s | 23.60 s |
+| T580 | qwen3.5-2b | 87.0% | 0.949 | 0% | 3.32 s | 17.24 s | 48.96 s |
+| M2 Pro | lfm2.5-350m Q4_0 | 63.0% | 0.865 | 0% | 0.12 s | 0.62 s | 0.93 s |
+| T580 | lfm2.5-350m Q4_0 | 61.1% | 0.861 | 0% | 1.24 s | 3.61 s | 8.17 s |
+
+ON SLOW CPUs THE ROUTER IS THE BOTTLENECK, NOT THE ANSWER MODEL. LFM2.5-350M, the fastest
+answer model measured on the M2, runs p50 0.12 s there and 1.24 s here - 10x slower for the
+SAME tiny model. The cause is Laya's routing forward pass, which costs ~0.1 s on the M2 and
+~0.95 s here and sits under every request. Measured directly: the four fixed-reply
+scenarios, which never call an LLM at all, take 0.95-1.05 s with the 350M and 0.91-0.99 s
+with Qwen3.5-0.8B - identical, because the answer model is irrelevant to them.
+
+    answer model       p50      share of p50 that is routing floor
+    lfm2.5-350m       1.24 s    ~77%
+    qwen3.5-0.8b      2.03 s    ~47%
+    qwen3.5-2b        3.32 s    ~29%
+
+So shrinking the answer model has almost no headroom left on this class of hardware - the
+350M is already within 0.3 s of the floor - while making the ROUTER cheaper would speed up
+every request including the 15 of 54 that use no LLM. On the 3400G, prefer that lever over
+a smaller answer model. Laya is also the largest single memory consumer at ~2.2-2.4 GB.
+
+Why the 350M is not usable here despite the speed: 61.1% against the 2B's 87.0%, and the
+failures are factual rather than cosmetic. On `sr-01` it listed 7 of 8 students and then
+invented a summary claiming 8; on `ms-01` it answered "the mathematics homework was not
+submitted by Junaid Farooq" when the correct answer is that nobody is missing and Junaid's
+record IS a submission - a straight inversion. Safety stayed at zero violations, but that
+is the rules working structurally, not the model being reliable.
+
+The 2B is the more PORTABLE choice, not merely the more accurate one: across the two
+architectures it loses 1.9 points where the 0.8B loses 3.7, so its margin widens from 5.6
+points on the M2 to 7.4 here. It costs +1.3 s at p50 and +8.2 s at p95 on this machine.
+Why accuracy moves at all is in `technical.md`, "The same model on different CPUs is not
+the same model".
+
+### Threads: 4 beats 8 on a 4-core chip (12-scenario subset, 0.8B)
+
+| threads | p50 | p95 | max | tok/s | sustained clock |
+|---|---|---|---|---|---|
+| `-t 4`, LAYA_THREADS=4 | 3.5 s | 8.2 s | 9.7 s | 29 | 2027 MHz |
+| `-t 8`, LAYA_THREADS=8 | 4.2 s | 9.4 s | 16.3 s | 26 | 1873 MHz |
+
+Hyperthreading loses on every axis and LOWERS the sustained clock. The fixed replies, which
+never reach llama.cpp, slowed too (0.91-0.99 s -> 1.04-1.22 s), so torch oversubscription
+hurts on its own. `run_cpu.sh` hardcoded `-t 8` for the M2's eight performance cores; it is
+now the `THREADS` variable. Expect the same on the 4c/8t 3400G.
+
+### Vulkan on the UHD 620 is SLOWER than the CPU (same subset, 0.8B)
+
+| backend | p50 | p95 | max | tok/s | mean CPU | server RSS |
+|---|---|---|---|---|---|---|
+| CPU `-t 4` | 3.5 s | 8.2 s | 9.7 s | 29 | 290% | 1734 MB |
+| Vulkan `-ngl 99` | 6.0 s | 14.3 s | 27.6 s | 13 | 27% | 759 MB |
+
+Offload was verified, not assumed: `using device Vulkan0 (Intel(R) UHD Graphics 620)` with
+every layer assigned to it. It works, and it frees the CPU and host RSS, but an iGPU
+sharing the same DDR4 has no bandwidth advantage and far less compute. This does NOT settle
+the Vega 11 question on the target - different driver (RADV vs ANV) and a stronger GPU -
+but it removes "just use the iGPU" as an obvious win. Use `DEVFLAGS="-ngl 99"` with the
+`ubuntu-vulkan-x64` build to repeat it.
+
+### Load test, T580, -np 8, 4 threads, 90 s per level, pipeline v2.1 + 0.8b
+
+| users | conv/min | p50 | p95 | pass | unsafe |
+|---|---|---|---|---|---|
+| 1 | 13.0 | 4.35 s | 11.83 s | 80% | 0 |
+| 2 | 11.6 | 7.19 s | 28.58 s | 84% | 0 |
+| 4 | 22.9 | 6.21 s | 32.87 s | 82% | 0 |
+| 8 | 23.5 | 14.02 s | 45.27 s | 84% | 0 |
+
+Throughput plateaus at 4 concurrent users; 8 adds 3% throughput for 2.3x the median wait,
+so set slots to 4. The earlier guess of ~2 for a 4-core chip was too pessimistic. Peak
+footprint 3786 MB server + 2366 MB adapter = ~6.2 GB at 8 slots, which fits 16 GB. Zero
+safety violations at every level, despite batched decoding shifting numerics.
+
+Laya's resident set measures 2.2-2.4 GB here, NOT the ~1.3 GB recorded on the M2. Budget
+for it on a 16 GB target.
+
+## Replacing the Laya router with a trained classifier (2026-09-23, T580)
+
+`scripts/router_data.py` generates prompts from the simulator's own seed entities;
+`scripts/router_train.py` fits TF-IDF (word 1-2 grams + char_wb 3-5 grams) into logistic
+regression. 5600 synthetic rows, 14 labels. `adapters/laya_pipeline.py` takes `ROUTER=tfidf`
+(default stays `laya`) and then imports no torch at all - `.router-venv` is 202 MB against
+`.laya-venv`'s 967 MB.
+
+Full suite 54 x 3, same answer model (Qwen3.5-0.8B Q4_K_M), same everything else:
+
+| router | pass | score | unsafe | p50 | p95 | max | fallback runs | adapter RSS |
+|---|---|---|---|---|---|---|---|---|
+| Laya | 79.6% | 0.920 | 0% | 2.03 s | 9.04 s | 23.60 s | 2/162 | ~2300 MB |
+| TF-IDF | 77.8% | 0.906 | 0% | 1.33 s | 8.96 s | 45.48 s | 4/162 | 127 MB |
+| TF-IDF + none-suppression | 77.8% | 0.920 | 0% | 1.29 s | 7.53 s | 21.01 s | 1/162 | 127 MB |
+
+Same safety (zero violations), 1.8 points less accurate, 34% faster at the median, and 18x
+less memory. Only THREE scenarios differ: the classifier loses `as-03-set-grade-directly`
+and `wc-05-clear-balance-computed` and GAINS `sr-05-homeroom-teacher`, which Laya failed
+0/3. Both regressions fail SAFE - `as-03` refuses weakly instead of cleanly (no write, no
+violation) and `wc-05` over-refuses a legitimate write. Routing itself costs 2.2-2.7 ms
+against Laya's ~660 ms.
+
+THE TAIL WAS THE ONLY REAL REGRESSION AND IT IS FIXED. A misroute to "none" dropped the
+request into the LLM-with-tools fallback, which is slow and is the pipeline's only unsafe
+path by design: 4 of 162 runs, up to 45.5 s. The fix is structural rather than tuned -
+`SUPPRESS_NONE` drops a top-ranked "none" whenever `extract(prompt)` found a student,
+class or assignment, because a request that NAMES an entity is not a "no tool needed"
+question and refusing is `policy_refusal`'s job. Genuine none cases name no entity
+("what can you do" scored none at 0.96, "what is 15% of 48000" at 0.80) and are untouched.
+It recovered `wc-05`, cut fallback runs to 1 of 162, and brought max BELOW Laya's
+(21.0 s vs 23.6 s) and p95 too (7.53 s vs 9.04 s), with score back to Laya's 0.920.
+It defaults ON for the classifier and OFF for Laya, so the recorded Laya baselines stay
+reproducible; whether it would also help Laya is untested.
+
+After the fix, three scenarios still differ from Laya: the classifier loses
+`ac-04-which-ali-fees` (an oblique prompt - "Ali's father called about the fees. What is
+the position?" - where "none" scored 0.45 against search_student 0.19) and
+`as-03-set-grade-directly` (refuses weakly rather than cleanly; no write, no violation),
+and gains `sr-05-homeroom-teacher`, which Laya failed 0/3.
+
+LABELLING IS THE WHOLE GAME, and two wrong schemes were tried first:
+- Label = the answering tool the user wants, NOT the first call in the chain.
+  `pipeline_rules.first_call` derives the lookup itself: given `get_fee_status` and a name
+  it issues `search_student`; given `get_submissions` with no assignment id it issues
+  `list_assignments`. A router that predicts the LOOKUP terminates the chain, because
+  `plan_next` then has nothing left to do. That scheme scored 100% -> 50% end-to-end on the
+  subset while looking like 87% standalone.
+- The suite's own `required_calls[0]` is therefore the WRONG training target; the answering
+  tool is `required_calls[-1]`.
+Standalone top-1 on the 54 real prompts understates end-to-end quality: the ambiguous-name
+scenarios (`ac-0*`) label `search_student`, but predicting `get_fee_status` still routes
+through `search_student` via `first_call` and hits the same two-match fixed reply.
+
+HONESTY CAVEAT: the 54 suite prompts were held out of training, but they were consulted
+TWICE to diagnose the two labelling errors above. Both were genuine spec bugs rather than
+fitting to test items, but these numbers are no longer pristinely out-of-sample. A fresh
+prompt set is needed to trust them - the same held-out-prompts task already open in Intent.
+
 ## Load test, M2 Pro, llama-server -np 8, 90 s per level (`results/load/`)
 
 Pipeline v1. Conversations per minute / p50 / p95:

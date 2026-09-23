@@ -36,9 +36,18 @@ results/*.html
 results/latency/*.json
 results/latency/mon/
 results/load/
+# Result JSON copied from another machine for cross-machine comparison
+results/m2/
 
 # Separate environment for the Laya adapters (torch is not a project dependency)
 .laya-venv/
+# Separate environment for the classifier router (sklearn, no torch)
+.router-venv/
+
+# Router training data and fitted model: deterministic and regenerable from
+# scripts/router_data.py and scripts/router_train.py, so the scripts are the source.
+data/*.jsonl
+data/*.pkl
 
 # Local server logs and scratch
 *.log

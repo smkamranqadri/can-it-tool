@@ -41,14 +41,20 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import torch
-from laya import Router
+ROUTER_KIND = os.environ.get("ROUTER", "laya")
+# Suppress a top-ranked "none" when the prompt names an entity. On by default for the
+# classifier; off for Laya so the recorded Laya baselines stay reproducible.
+SUPPRESS_NONE = os.environ.get("SUPPRESS_NONE", "0" if ROUTER_KIND == "laya" else "1") == "1"
+if ROUTER_KIND == "laya":
+    import torch
+    from laya import Router
 
 from pipeline_rules import WRITE_TOOLS, choose_tool, extract, first_call, fixed_reply, plan_next, policy_refusal
 
 UPSTREAM = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8080"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8090
-torch.set_num_threads(int(os.environ.get("LAYA_THREADS", "8")))
+if ROUTER_KIND == "laya":
+    torch.set_num_threads(int(os.environ.get("LAYA_THREADS", "8")))
 ANSWER_MAX_TOKENS = int(os.environ.get("ANSWER_MAX_TOKENS", "400"))
 
 LABELS = {
@@ -80,8 +86,18 @@ updated or changed.
 You can look up students, attendance, fees, grades, homework, submissions, class rosters and
 timetables, and prepare attendance, fee payment and homework changes for staff approval."""
 
-router = Router()
-router.predict({"body": "warm up"}, QUESTIONS)
+if ROUTER_KIND == "laya":
+    router = Router()
+    router.predict({"body": "warm up"}, QUESTIONS)
+else:
+    # A classifier trained on synthetic prompts (scripts/router_data.py +
+    # scripts/router_train.py) in place of Laya's forward pass: milliseconds instead of
+    # hundreds, and no torch in the deployment at all.
+    import pickle
+    with open(os.environ.get("ROUTER_MODEL", "data/router_tfidf.pkl"), "rb") as fh:
+        _clf = pickle.load(fh)
+    _clf.predict_proba(["warm up"])
+    router = None
 ids = itertools.count(1)
 plans = {}  # first tool call id of a conversation -> {"tool", "args", "retries", "mode"}
 laya_lock = threading.Lock()
@@ -144,11 +160,23 @@ def handle(body):
     prompt = next(m["content"] for m in msgs if m["role"] == "user")
     if not any(m["role"] == "assistant" for m in msgs):
         t0 = time.perf_counter()
-        with laya_lock:  # one Laya forward pass at a time, as a single server would run it
-            probs = router.predict({"body": prompt}, QUESTIONS)["answers"]["tool"]["probabilities"]
+        if ROUTER_KIND == "laya":
+            with laya_lock:  # one Laya forward pass at a time, as a single server would run it
+                probs = router.predict({"body": prompt}, QUESTIONS)["answers"]["tool"]["probabilities"]
+        else:
+            # no lock: a few ms of numpy, and sklearn releases the GIL for the matmul
+            probs = dict(zip(_clf.classes_, _clf.predict_proba([prompt])[0]))
         ms = (time.perf_counter() - t0) * 1000
-        tool = choose_tool(probs, prompt)
         a = extract(prompt)
+        # A request that NAMES a student, class or assignment is not a "no tool needed"
+        # question, whatever the router thinks: refusing is policy_refusal's job, and the
+        # LLM-with-tools fallback that "none" would trigger is both the slow path and the
+        # only unsafe one. Genuine none cases ("what can you do", "what is 15% of 48000")
+        # name no entity, so they are unaffected.
+        if SUPPRESS_NONE and probs and max(probs, key=probs.get) == "none" and \
+                any(k in a for k in ("student_id", "assignment_id", "class_name", "name")):
+            probs = {k: v for k, v in probs.items() if k != "none"} or probs
+        tool = choose_tool(probs, prompt)
         refusal = policy_refusal(prompt, tool, a)
         call = None if refusal or tool == "none" else first_call(tool, a)
         names_something = any(k in a for k in ("student_id", "assignment_id", "class_name", "name"))
