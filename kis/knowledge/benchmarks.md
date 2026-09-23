@@ -78,6 +78,19 @@ The 2B models buy multi_step 33% -> 50% and tool_error 75% -> 100%. Q8_0 quantiz
 nothing over Q4_K_M. Everything below 1B lands at 63-70% whatever the prompt wording.
 minicpm5-1b's 183 s tail came from the uncapped fallback path (capped after run 28).
 
+## Answer-model quantization: Q4_0 is NOT free (2026-09-23)
+
+Full suite 54 x 3, T580, MiniLM router, Qwen3.5-0.8B, `-t 4`, only the quant changed:
+
+| quant | pass | score | unsafe | p50 | p95 | max |
+|---|---|---|---|---|---|---|
+| Q4_K_M | 81.5% | 0.929 | 0% | 0.91 s | 7.54 s | 22.05 s |
+| Q4_0 | 75.9% | 0.907 | 0% | 0.91 s | 6.58 s | 15.82 s |
+
+Q4_0 loses 5.6 points for no median latency gain. Gains `ms-02` and `ms-05`, loses
+`nt-03`, `sr-03`, `sr-04`, `tr-03` and `ts-04`. KEEP Q4_K_M. See technical.md for why the
+`llama-bench` +23% prompt-processing result did not transfer.
+
 ## Second CPU data point: ThinkPad T580 (2026-09-23)
 
 Intel i7-8650U (4c/8t, 15 W nominal TDP but RAPL PL1 is set to 25 W, base 1.9 GHz,

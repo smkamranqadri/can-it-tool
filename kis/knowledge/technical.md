@@ -275,12 +275,24 @@ Both orders agree and the first penalizes Q4_0, so +23% is the conservative floo
 Generation is a wash (~29-31 t/s either way; Q4_0's file is larger, 526 vs 497 MiB, which
 costs back some bandwidth). llama.cpp repacks Q4_0 into integer AVX2 kernels at load.
 
-THIS CONTRADICTS the earlier note that "on CPU, Q4_0 no longer beats Q4_K_M on b11100" -
-that was measured on the M2, which is arm64. On x86 AVX2 Q4_0 clearly wins prompt
-processing, and prompt processing is 60-75% of CPU wait. The 3400G is also x86 AVX2, so
-this should carry to the target. NOT YET VALIDATED FOR ACCURACY: Q4_0 is a coarser quant
-than Q4_K_M and no full-suite run has been done with it. Speed without that check is not
-a recommendation.
+On x86 AVX2 Q4_0 clearly wins PROMPT PROCESSING, where the earlier note that "on CPU, Q4_0
+no longer beats Q4_K_M on b11100" was measured on the M2's arm64.
+
+BUT DO NOT USE Q4_0. The accuracy check was run and it fails: full suite 54 x 3, MiniLM
+router, Qwen3.5-0.8B, only the quantization changed.
+
+    quant     pass     score     p50       p95       max
+    Q4_K_M    81.5%    0.929     0.91 s    7.54 s    22.05 s
+    Q4_0      75.9%    0.907     0.91 s    6.58 s    15.82 s
+
+It costs 5.6 points and buys NO median latency. Seven scenarios moved, gaining 2 and
+losing 5. The tail does improve, which is where the faster prompt processing shows up -
+and it is also where the accuracy is lost.
+
+THE MICROBENCHMARK DID NOT PREDICT THE SYSTEM, for the second time in this project (the
+first was RAPL PL1). `llama-bench` measured +23% prompt processing, but the pipeline's
+MEDIAN request is a fixed reply that never calls the LLM at all, so prompt-processing speed
+cannot move p50 by construction. Measure the application, not the kernel.
 
 TRAP - op offload. Running the Vulkan build with `-ngl 0` does NOT give a clean CPU run:
 llama.cpp still offloads large matmuls to the device, costing pp512 50.2 against 74.9 with

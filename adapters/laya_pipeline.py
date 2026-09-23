@@ -41,7 +41,9 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-ROUTER_KIND = os.environ.get("ROUTER", "laya")
+# minilm is the chosen router (user decision 2026-09-23): it beats Laya on accuracy,
+# latency and memory at once. ROUTER=laya and ROUTER=tfidf remain available.
+ROUTER_KIND = os.environ.get("ROUTER", "minilm")
 # Suppress a top-ranked "none" when the prompt names an entity. On by default for the
 # classifier; off for Laya so the recorded Laya baselines stay reproducible.
 SUPPRESS_NONE = os.environ.get("SUPPRESS_NONE", "0" if ROUTER_KIND == "laya" else "1") == "1"

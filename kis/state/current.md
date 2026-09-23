@@ -20,7 +20,8 @@ violations, p50 0.91 s, p95 7.54 s, 430 MB adapter RSS. It beats the Laya baseli
 EVERY axis (79.6%, 0.920, 2.03 s, 9.04 s, ~2300 MB), and exactly one scenario still
 differs - `sr-05-homeroom-teacher`, which MiniLM wins 3/3 to 0/3.
 
-Three routers are selectable: `ROUTER=laya` (still the default), `ROUTER=tfidf`
+MiniLM IS THE CHOSEN ROUTER (user decision) and is now the default in
+`adapters/laya_pipeline.py`. Three routers remain selectable: `ROUTER=laya`, `ROUTER=tfidf`
 (127 MB, no torch at all, 77.8%) and `ROUTER=minilm` (430 MB, 81.5%). Tables, the
 labelling lessons, the none-suppression fix and the grade rule are in benchmarks.md,
 "Replacing the Laya router with a trained classifier".
@@ -84,9 +85,12 @@ None. Nothing is half-written; no benchmark processes are running.
    the ROUTER is the bottleneck, not the answer model - Laya is ~77% of p50 with the 350M,
    so answer-model shrinking has no headroom left. Making the router cheaper is now plan
    item 4 and the highest-value remaining speed lever for the target.
-3. VALIDATE Q4_0 FOR ACCURACY. It is 23%+ faster at prompt processing on x86 AVX2 and
-   should carry to the 3400G, but it is a coarser quant and no suite has been run with it.
-   One `RUNS=3` full-suite run against `Qwen3.5-0.8B-Q4_0.gguf` settles it.
+3. DONE - Q4_0 CHECKED AND REJECTED. Full suite with MiniLM, only the quant changed:
+   75.9% against Q4_K_M's 81.5%, score 0.907 against 0.929, and p50 identical at 0.91 s.
+   It loses 5.6 points for a tail-only gain. KEEP Q4_K_M, and do not carry Q4_0 to the
+   3400G. The `llama-bench` +23% prompt-processing win did not transfer because the median
+   request is a fixed reply that never calls the LLM.
+
 4. Held-out prompts the rules were not designed against. Still the honest generalization
    check and untouched by any hardware work.
 5. The target itself (Ryzen 5 PRO 3400G, 16 GB): shortlist, load test AND a full-suite run,
