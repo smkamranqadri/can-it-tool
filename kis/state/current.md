@@ -14,13 +14,16 @@ hardware behaves as it does is in `kis/knowledge/technical.md`.
 The T580 (ThinkPad, i7-8650U, Omarchy) is set up and fully measured as a second CPU data
 point. The deployment target is still the Ryzen 5 PRO 3400G.
 
-NEW: Laya has a working replacement, and it is done. A TF-IDF classifier trained on
-synthetic prompts now matches Laya's score exactly (0.920) with zero safety violations,
-and beats it on every latency measure - p50 1.29 s vs 2.03, p95 7.53 vs 9.04, max 21.0 vs
-23.6 - using 127 MB instead of ~2300 MB and no torch at all. Pass rate is 77.8% vs 79.6%,
-a one-scenario difference. Tables, the labelling lessons and the none-suppression fix are
-in benchmarks.md, "Replacing the Laya router with a trained classifier". `ROUTER=laya`
-remains the default; `ROUTER=tfidf` selects the classifier.
+LAYA IS REPLACED. The best configuration measured on this machine is the MiniLM router
+with none-suppression and the grade refusal rule: 81.5% pass, score 0.929, zero safety
+violations, p50 0.91 s, p95 7.54 s, 430 MB adapter RSS. It beats the Laya baseline on
+EVERY axis (79.6%, 0.920, 2.03 s, 9.04 s, ~2300 MB), and exactly one scenario still
+differs - `sr-05-homeroom-teacher`, which MiniLM wins 3/3 to 0/3.
+
+Three routers are selectable: `ROUTER=laya` (still the default), `ROUTER=tfidf`
+(127 MB, no torch at all, 77.8%) and `ROUTER=minilm` (430 MB, 81.5%). Tables, the
+labelling lessons, the none-suppression fix and the grade rule are in benchmarks.md,
+"Replacing the Laya router with a trained classifier".
 
 Installed here and reusable: `uv` in `~/.local/bin`, llama.cpp b11100 `ubuntu-x64` in
 `~/.local/opt/llama-b11100/` with the Vulkan build beside it, `.laya-venv` (torch 2.14.0+cpu,
@@ -47,17 +50,24 @@ None. Nothing is half-written; no benchmark processes are running.
 ## Next
 
 1. CLASSIFIER ROUTER - remaining polish, none of it blocking:
-   a. DONE - load test re-run. Peak throughput 90.7 -> 277.0 req/min (3.05x) and the
+   a. DONE for TF-IDF - load test re-run, peak throughput 90.7 -> 277.0 req/min (3.05x) and the
       median wait under 4-user load 5.78 s -> 1.01 s, zero safety violations at every
       level. Slots stay at 4; that ceiling is the four cores, not the router.
-   b. Recover `ac-04` (oblique phrasing, "none" 0.45 beat search_student 0.19) and `as-03`
-      (weak rather than clean refusal). Both fail safe; neither is urgent.
+   b. DONE for `as-03` - fixed in `policy_refusal`, which is the right layer: a grade
+      change is unsupported however it was routed. Narrow by design so a homework
+      submission score (`wc-04`) is still allowed; verified to fire on `as-03` alone across
+      all 54 prompts, and it took the rules dry-run from 4/5 to 5/5 must-refuse and from
+      15/54 to 17/54 no-LLM answers. NOT gated by router, and re-running Laya confirmed
+      zero scenarios changed for it. `ac-04` is recovered by MiniLM; TF-IDF still misses it.
    c. DONE - MiniLM beats TF-IDF end-to-end: 79.6% vs 77.8% (it gains `ac-04` and loses
       nothing), score 0.922, p50 0.97 s vs 1.29 s, at 429 MB vs 127 MB. It matches Laya's
       pass rate exactly. Standalone the two classifiers TIE at 74.1% and are both wrong on
       13 of 14 - standalone top-1 is a poor proxy for this pipeline. NOT yet load-tested.
-      Pick TF-IDF if the torch dependency matters, MiniLM for the extra 1.8 points.
-   d. Export the model to plain numpy so sklearn (202 MB) drops out too.
+      Pick TF-IDF if the torch dependency matters, MiniLM otherwise - with the grade rule
+      MiniLM reaches 81.5%, beating Laya outright.
+   d. Export the TF-IDF model to plain numpy so sklearn (202 MB) drops out too.
+   e. NOT DONE: MiniLM has never been load-tested. It routes in 7.7 ms against TF-IDF's
+      2.4 ms, so its throughput ceiling is unmeasured. Worth running if MiniLM is chosen.
 
 2. DECIDE THE ANSWER MODEL. Recommendation: Qwen3.5-2B. It is not just more accurate but
    more portable - across the two architectures it lost 1.9 points where the 0.8B lost 3.7,

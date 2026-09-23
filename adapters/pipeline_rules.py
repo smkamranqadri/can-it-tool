@@ -122,6 +122,17 @@ def policy_refusal(prompt, tool, a):
                 "for, so every student and every change needs its own confirmation.")
     if not write_intent(prompt):
         return None
+    # A grade in the academic record cannot be written: no tool does it, so the request has
+    # to be refused however it was routed. A score on a homework SUBMISSION is a different
+    # thing - update_submission_status takes one - so this only fires with no submission
+    # context. The trailing (?!\s+\d) keeps "Grade 5"/"Grade 6" (year groups) out.
+    if re.search(r"\b(set|change|update|fix|correct|raise|lower|adjust|award|give)\b[^.]{0,60}?"
+                 r"\b(grade|grades|mark|marks|score|scores|result|results)\b(?!\s+\d)", prompt, re.I) \
+            and not re.search(r"\b(homework|assignment|submission|submitted|handed in|ASG-\d{4})\b",
+                              prompt, re.I):
+        return ("I can't change a grade. Grades come from the academic record and there is no tool that "
+                "edits them; that has to go through the teacher who set the work. I can show you the "
+                "current record, or prepare an attendance, fee or homework submission change.")
     if tool == "none":
         return ("I can't make that change. There is no tool for editing that record; I can only prepare "
                 "attendance, fee payment and homework submission changes for your approval.")
