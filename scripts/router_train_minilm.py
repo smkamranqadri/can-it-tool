@@ -18,6 +18,9 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 MODEL = os.environ.get("MINILM", "sentence-transformers/all-MiniLM-L6-v2")
 MAXLEN, EPOCHS, BS, LR = 48, int(os.environ.get("EPOCHS", "4")), 32, 3e-5
 torch.set_num_threads(int(os.environ.get("THREADS", "4")))
+# Seeded so a retrain reproduces the shipped model: the weights are NOT in git
+# (88 MB, and model weights do not belong in history), so this script is the artifact.
+torch.manual_seed(int(os.environ.get("SEED", "20260923")))
 
 
 def load(p):

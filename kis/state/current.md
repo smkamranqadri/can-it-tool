@@ -1,8 +1,9 @@
 # Current State
 
 Branch: main
-Task: CPU setup for the user's project - T580 measurement track complete; answer model undecided
-Mode: Phase (T580 track done); next steps are Fast
+Task: PINNED 2026-09-23. CPU setup for the user's project. The T580 measurement track and
+      the Laya replacement are complete; the answer model is the one decision still open.
+Mode: Phase (all phases done); the remaining items are Fast and independent of each other
 Command: `uv run --with pytest --with httpx --python 3.14 pytest -q`
 
 Plan: `kis/intent/ImplementationPlan.md`, Track - T580 measurements (all phases DONE).
@@ -31,7 +32,17 @@ Installed here and reusable: `uv` in `~/.local/bin`, llama.cpp b11100 `ubuntu-x6
 laya 0.3.6), and in `~/models`: Qwen3.5-0.8B-Q4_K_M, Qwen3.5-0.8B-Q4_0,
 Qwen3.5-2B-Q4_K_M (unsloth), Qwen_Qwen3.5-2B-Q4_K_M (bartowski, matches the M2 run).
 The M2's own result JSONs are in `results/m2/` (gitignored) so `compare.py` can put both
-machines side by side.
+machines side by side. Also in `~/models`: LFM2.5-350M-Q4_0.gguf.
+
+TO RESUME, REGENERATE THE ROUTER MODELS - they are NOT in git (88 MB of weights, and the
+training data is regenerable). Both are seeded, so a retrain reproduces what was measured:
+
+    uv run --python 3.14 python scripts/router_data.py            # 5600 rows + the 54-prompt test set
+    uv run --with scikit-learn --python 3.14 python scripts/router_train.py    # TF-IDF -> data/router_tfidf.pkl
+    THREADS=4 .laya-venv/bin/python scripts/router_train_minilm.py            # MiniLM -> data/router_minilm/
+
+`.laya-venv` (torch, for MiniLM and Laya) and `.router-venv` (sklearn only, for TF-IDF) are
+both gitignored too; `adapters/README.md` and technical.md record how they were built.
 
 ## Proof
 
