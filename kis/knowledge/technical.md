@@ -143,7 +143,7 @@ tunable on a power-limited laptop" below - and
 DSpark speculative decoding slows LFM2.5-8B down (~23% draft acceptance). For Qwen3.5,
 `--reasoning off` halves the wait and did not reduce accuracy at 2B.
 
-## Answer-model size in the Laya pipeline
+## Answer-model size in the pipeline (measured when Laya was still the router)
 
 With tool calls taken out of the LLM, the answer model only phrases tool results, which
 compresses the differences between models without erasing them: on the full suite

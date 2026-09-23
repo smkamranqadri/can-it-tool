@@ -200,7 +200,9 @@ with Qwen3.5-0.8B - identical, because the answer model is irrelevant to them.
 So shrinking the answer model has almost no headroom left on this class of hardware - the
 350M is already within 0.3 s of the floor - while making the ROUTER cheaper would speed up
 every request including the 15 of 54 that use no LLM. On the 3400G, prefer that lever over
-a smaller answer model. Laya is also the largest single memory consumer at ~2.2-2.4 GB.
+a smaller answer model. Laya was also the largest single memory consumer at
+~2.2-2.4 GB. THIS IS WHAT MOTIVATED REPLACING IT; see "Replacing the Laya router
+with a trained classifier" below for what the router costs now.
 
 Why the 350M is not usable here despite the speed: 61.1% against the 2B's 87.0%, and the
 failures are factual rather than cosmetic. On `sr-01` it listed 7 of 8 students and then

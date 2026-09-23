@@ -83,12 +83,10 @@ Remaining work, in order:
    generation, which stays bandwidth-bound on shared memory. See technical.md, "Why an
    iGPU does not accelerate this workload". Also Q4_0 and `-c 4096` to cut resident
    memory. Budget ~2.3 GB for Laya.
-4. PROMOTED from speculative: make the ROUTER cheaper. Measured on the T580, Laya's
-   forward pass is ~0.95 s and is 77% of the p50 wait with a small answer model, and it is
-   the largest memory consumer at ~2.2-2.4 GB. On slow CPUs this is now the highest-value
-   remaining speed lever, ahead of any further answer-model shrinking, which has almost no
-   headroom left. Options: swap Laya for Needle 3 as the router, or fine-tune a 270M model
-   (FunctionGemma or Needle 3) on these 13 tools for accuracy.
+4. DONE 2026-09-23 - the router was replaced. SUPERSEDED: this item proposed swapping Laya
+   for Needle 3 or fine-tuning a 270M model; neither was needed. A trained CLASSIFIER was
+   enough, because routing is 14-way classification over short prompts, not generation.
+   See the track below.
 
 Proof: the chosen setup holds its wait and pass rate on the held-out prompts and on the
 target, with zero safety violations, and the load test shows the concurrency it sustains.
@@ -158,3 +156,32 @@ Assumption on record: the GGUF provenance is unmatched (the M2 result JSON is gi
 and lives on that machine). Quant is Q4_K_M either way and provenance does not move latency.
 It only matters if accuracy diverges from the benchmarks.md rows by more than a couple of
 points; the M2 metadata settles it then.
+
+## Track - replacing the Laya router (done 2026-09-23)
+
+Laya's forward pass was ~660 ms, held a global lock, and cost ~2.3 GB - 77% of the p50 wait
+with a small answer model, the largest memory consumer, and the throughput ceiling. Routing
+is 14-way classification over short prompts, so a classifier replaces it.
+
+Built and measured, all in `kis/knowledge/benchmarks.md`:
+- `scripts/router_data.py` generates training prompts from the simulator's seed entities.
+  The 54 suite prompts are the test set and are never trained on.
+- `scripts/router_train.py` (TF-IDF + logistic regression) and
+  `scripts/router_train_minilm.py` (fine-tuned MiniLM, seeded).
+- `adapters/laya_pipeline.py` takes `ROUTER=laya|tfidf|minilm`, default now `minilm`.
+- Two fixes found on the way: `SUPPRESS_NONE` (router-gated) and a grade refusal rule in
+  `policy_refusal` (not gated - it is correct for every router).
+
+Outcome: MiniLM beats the Laya baseline on accuracy, latency AND memory at once, 81.5%
+against 79.6% at p50 0.91 s against 2.03 s on 430 MB against ~2300 MB, with three times
+the throughput. Zero safety violations throughout.
+
+Remaining, none blocking:
+- WRITE/READ BIAS. Held-out prompts show both routers sending write requests to read tools
+  (MiniLM 29 of 42, TF-IDF 17 of 42). Fails safe, fails the user, and REVERSES the router
+  ranking. `choose_tool` demotes writes without write intent but never promotes them with
+  it; a naive fix misfires because `WRITE_VERBS` contains "record".
+- REAL PROMPTS from the repo owner or school staff, 20-30, worth more than hundreds of
+  generated ones. Phrasing distribution is what is under test.
+- Export the TF-IDF model to plain numpy to drop sklearn, if the torch-free variant is
+  ever preferred.
