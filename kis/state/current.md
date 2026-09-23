@@ -66,8 +66,9 @@ None. Nothing is half-written; no benchmark processes are running.
       Pick TF-IDF if the torch dependency matters, MiniLM otherwise - with the grade rule
       MiniLM reaches 81.5%, beating Laya outright.
    d. Export the TF-IDF model to plain numpy so sklearn (202 MB) drops out too.
-   e. NOT DONE: MiniLM has never been load-tested. It routes in 7.7 ms against TF-IDF's
-      2.4 ms, so its throughput ceiling is unmeasured. Worth running if MiniLM is chosen.
+   e. DONE - MiniLM load-tested: peak 276.3 req/min against TF-IDF's 277.0, which is noise,
+      and a LOWER p50 at every level. Routing cost does not register because the bottleneck
+      at 4+ users is llama.cpp on four cores. No throughput argument remains for TF-IDF.
 
 2. DECIDE THE ANSWER MODEL. Recommendation: Qwen3.5-2B. It is not just more accurate but
    more portable - across the two architectures it lost 1.9 points where the 0.8B lost 3.7,

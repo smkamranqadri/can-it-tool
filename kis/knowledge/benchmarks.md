@@ -219,7 +219,8 @@ A bigger model cannot close a train/test distribution gap. Better training promp
 
 Choose TF-IDF when the torch dependency matters (127 MB against 429 MB, a 202 MB venv
 against 967 MB, and 2.4 ms routing which measured 277 req/min under load); choose MiniLM
-for the extra 1.8 points and lower latency. MiniLM under load is NOT yet measured.
+otherwise - with the grade rule it reaches 81.5%, beating Laya outright, and it matches
+TF-IDF's throughput exactly while having lower latency at every concurrency level.
 
 Same safety (zero violations), 1.8 points less accurate, 34% faster at the median, and 18x
 less memory. Only THREE scenarios differ: the classifier loses `as-03-set-grade-directly`
@@ -265,12 +266,19 @@ THROUGHPUT TRIPLED. The Laya lock was the ceiling, and removing it moved everyth
 Load test, T580, `-np 8`, `-t 4`, 90 s per level, LFM2.5-350M answer model, identical
 configuration apart from the router (`results/load/T11-*` vs `T16-*`):
 
-| users | Laya req/min | classifier req/min | Laya p50 | classifier p50 |
-|---|---|---|---|---|
-| 1 | 61.5 | 142.4 | 2.05 s | 0.92 s |
-| 2 | 90.2 | 259.7 | 2.75 s | 0.49 s |
-| 4 | 90.7 | 277.0 | 5.78 s | 1.01 s |
-| 8 | 76.4 | 239.8 | 12.03 s | 2.76 s |
+| users | Laya req/min | TF-IDF req/min | MiniLM req/min | Laya p50 | TF-IDF p50 | MiniLM p50 |
+|---|---|---|---|---|---|---|
+| 1 | 61.5 | 142.4 | 151.2 | 2.05 s | 0.92 s | 0.70 s |
+| 2 | 90.2 | 259.7 | 241.6 | 2.75 s | 0.49 s | 0.47 s |
+| 4 | 90.7 | 277.0 | 276.3 | 5.78 s | 1.01 s | 0.82 s |
+| 8 | 76.4 | 239.8 | 249.7 | 12.03 s | 2.76 s | 2.26 s |
+
+THE TWO CLASSIFIERS ARE INDISTINGUISHABLE ON THROUGHPUT: peak 277.0 against 276.3 req/min,
+and MiniLM has the LOWER p50 at every level despite routing in 7.7 ms against TF-IDF's
+2.4 ms. At 4 users and above the bottleneck is llama.cpp on four cores, not routing, so a
+5 ms difference per request does not register. There is therefore no throughput argument
+for preferring TF-IDF; the only remaining one is memory (127 MB against 443 MB) and having
+no torch dependency at all.
 
 Peak 90.7 -> 277.0 requests per minute, 3.05x, and the median wait under 4-user load fell
 5.7x. Zero safety violations at every level, on both routers. Adapter RSS 128 MB against
