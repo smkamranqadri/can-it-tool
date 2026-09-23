@@ -382,6 +382,14 @@ max_steps termination has now fired on real models (Qwen3.5-0.8B and 2B looping 
 
 ## Decisions taken
 
+- MiniLM is the router (2026-09-23), replacing Laya. It beats the Laya baseline on
+  accuracy, latency and memory simultaneously, and `ROUTER=minilm` is the default in
+  `adapters/laya_pipeline.py`; `laya` and `tfidf` stay selectable. Choose `tfidf` instead
+  when a torch-free deployment matters more than 3.7 points.
+- Q4_0 is rejected for the answer model (2026-09-23). It is 23%+ faster at prompt
+  processing on x86 AVX2 but costs 5.6 points of accuracy for no median latency gain,
+  because the median request is a fixed reply that never calls the LLM. Keep Q4_K_M, and
+  do not carry Q4_0 to the 3400G.
 - Design approved by the user with three amendments: keep all 54 scenarios, add
   `record_fee_payment` and `update_submission_status` as WRITE tools, and bind
   confirmation tokens to the exact tool and arguments.

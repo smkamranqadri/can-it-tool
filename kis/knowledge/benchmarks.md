@@ -405,8 +405,9 @@ Pipeline v1. Conversations per minute / p50 / p95:
 
 Peak RSS: llama-server 5.1 GB with 8 slots, plus Laya 1.3 GB.
 
-## Laya as a router
+## Laya as a router (HISTORICAL - Laya was replaced, see the classifier section above)
 
+This is the baseline the trained classifier was measured against, not current behaviour.
 `choice` over 13 tool labels + none: right tool on 11 of 12 subset prompts, 55-250 ms per
 prompt on CPU (faster once the refusal question was dropped). The `noul` (yes/no per tool)
 variant is much weaker: every required tool picked on only 16 of 45 prompts, 277 ms
