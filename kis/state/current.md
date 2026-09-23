@@ -52,7 +52,11 @@ None. Nothing is half-written; no benchmark processes are running.
       level. Slots stay at 4; that ceiling is the four cores, not the router.
    b. Recover `ac-04` (oblique phrasing, "none" 0.45 beat search_student 0.19) and `as-03`
       (weak rather than clean refusal). Both fail safe; neither is urgent.
-   c. Try the MiniLM encoder as originally planned, to see if it beats TF-IDF's 77.8%.
+   c. DONE - MiniLM beats TF-IDF end-to-end: 79.6% vs 77.8% (it gains `ac-04` and loses
+      nothing), score 0.922, p50 0.97 s vs 1.29 s, at 429 MB vs 127 MB. It matches Laya's
+      pass rate exactly. Standalone the two classifiers TIE at 74.1% and are both wrong on
+      13 of 14 - standalone top-1 is a poor proxy for this pipeline. NOT yet load-tested.
+      Pick TF-IDF if the torch dependency matters, MiniLM for the extra 1.8 points.
    d. Export the model to plain numpy so sklearn (202 MB) drops out too.
 
 2. DECIDE THE ANSWER MODEL. Recommendation: Qwen3.5-2B. It is not just more accurate but

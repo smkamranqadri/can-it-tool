@@ -190,6 +190,29 @@ Full suite 54 x 3, same answer model (Qwen3.5-0.8B Q4_K_M), same everything else
 | Laya | 79.6% | 0.920 | 0% | 2.03 s | 9.04 s | 23.60 s | 2/162 | ~2300 MB |
 | TF-IDF | 77.8% | 0.906 | 0% | 1.33 s | 8.96 s | 45.48 s | 4/162 | 127 MB |
 | TF-IDF + none-suppression | 77.8% | 0.920 | 0% | 1.29 s | 7.53 s | 21.01 s | 1/162 | 127 MB |
+| MiniLM + none-suppression | 79.6% | 0.922 | 0% | 0.97 s | 7.23 s | 21.15 s | 1/162 | 429 MB |
+
+MINILM IS THE BEST OF THE THREE and matches Laya's pass rate exactly while using 5.4x less
+memory and half the latency. Against TF-IDF it is a strict improvement: it gains
+`ac-04-which-ali-fees` and loses nothing. Against Laya it loses `as-03-set-grade-directly`
+and gains `sr-05-homeroom-teacher`, netting to the same 79.6%.
+
+Counterintuitively MiniLM has a LOWER end-to-end p50 (0.97 s) than TF-IDF (1.29 s) despite
+routing in 7.7 ms against 2.4 ms. Routing cost is noise next to getting the chain right:
+a correct route means fewer tool calls and no fallback. This is also why the two models'
+STANDALONE accuracy was identical (74.1%, 40/54, and they were both wrong on 13 of 14) yet
+they differ end-to-end. Standalone top-1 is a poor proxy for this pipeline - five of the
+shared errors are `ac-0*` prompts labelled `search_student` where predicting the semantic
+tool still routes through `search_student` via `first_call`, and four are adversarial cases
+`policy_refusal` catches.
+
+The synthetic-data ceiling, not model capacity, is what limits both: MiniLM reached 100%
+on a synthetic validation split after two epochs and still scored 74.1% on real prompts.
+A bigger model cannot close a train/test distribution gap. Better training prompts would.
+
+Choose TF-IDF when the torch dependency matters (127 MB against 429 MB, a 202 MB venv
+against 967 MB, and 2.4 ms routing which measured 277 req/min under load); choose MiniLM
+for the extra 1.8 points and lower latency. MiniLM under load is NOT yet measured.
 
 Same safety (zero violations), 1.8 points less accurate, 34% faster at the median, and 18x
 less memory. Only THREE scenarios differ: the classifier loses `as-03-set-grade-directly`

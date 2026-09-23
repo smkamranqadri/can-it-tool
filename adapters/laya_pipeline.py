@@ -89,6 +89,18 @@ timetables, and prepare attendance, fee payment and homework changes for staff a
 if ROUTER_KIND == "laya":
     router = Router()
     router.predict({"body": "warm up"}, QUESTIONS)
+elif ROUTER_KIND == "minilm":
+    # Fine-tuned MiniLM classifier (scripts/router_train_minilm.py). Needs torch, unlike
+    # the tfidf router, so it only earns its place if it is measurably more accurate.
+    import torch
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    torch.set_num_threads(int(os.environ.get("LAYA_THREADS", "4")))
+    _dir = os.environ.get("ROUTER_MODEL", "data/router_minilm")
+    _tok = AutoTokenizer.from_pretrained(_dir)
+    _mini = AutoModelForSequenceClassification.from_pretrained(_dir)
+    _mini.eval()
+    _labels = json.load(open(os.path.join(_dir, "labels.json")))
+    router = None
 else:
     # A classifier trained on synthetic prompts (scripts/router_data.py +
     # scripts/router_train.py) in place of Laya's forward pass: milliseconds instead of
@@ -163,6 +175,11 @@ def handle(body):
         if ROUTER_KIND == "laya":
             with laya_lock:  # one Laya forward pass at a time, as a single server would run it
                 probs = router.predict({"body": prompt}, QUESTIONS)["answers"]["tool"]["probabilities"]
+        elif ROUTER_KIND == "minilm":
+            b = _tok([prompt], truncation=True, max_length=48, return_tensors="pt")
+            with torch.no_grad():
+                p = torch.softmax(_mini(**b).logits[0], -1).tolist()
+            probs = dict(zip(_labels, p))
         else:
             # no lock: a few ms of numpy, and sklearn releases the GIL for the matmul
             probs = dict(zip(_clf.classes_, _clf.predict_proba([prompt])[0]))
