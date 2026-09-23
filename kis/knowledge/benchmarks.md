@@ -78,6 +78,50 @@ The 2B models buy multi_step 33% -> 50% and tool_error 75% -> 100%. Q8_0 quantiz
 nothing over Q4_K_M. Everything below 1B lands at 63-70% whatever the prompt wording.
 minicpm5-1b's 183 s tail came from the uncapped fallback path (capped after run 28).
 
+## Held-out router prompts: a weakness the suite cannot see (2026-09-23)
+
+`scripts/heldout_prompts.py` had the local 2B write school-office requests from a
+plain-English description of ONE capability at a time, never seeing the tool names, the
+scenarios, the rules or `router_data.py`'s templates. The label is the capability that was
+requested. 275 generated, 240 after dropping non-requests.
+
+DO NOT QUOTE AN ACCURACY NUMBER FROM THIS SET. MiniLM scored 51.7% and TF-IDF 50.0%, but
+the labels are too noisy to trust: the generator invented entities the simulator does not
+have ("Physics assignment", "the 6th period", "mark sheet" - there are four subjects and no
+worksheets), and it labelled plainly answerable questions as `none` ("verify the attendance
+for Sadia Iftikhar"). `get_assignment` scored 0/11 almost entirely on invented entities.
+Correcting by eye for the noise puts it near the suite's ~74%, but that is an impression,
+not a measurement.
+
+WHAT IT DID FIND, and this is real: BOTH ROUTERS HAVE A STRONG READ BIAS on unfamiliar
+phrasing.
+
+| router | write prompts routed to the right write tool | routed to a READ tool |
+|---|---|---|
+| MiniLM | 9 / 42 | 29 / 42 |
+| TF-IDF | 14 / 42 | 17 / 42 |
+
+The reverse is rare (6 and 4 of 160 read prompts). "I need to record the fee payment from
+the family of Hooriya Saleem" returns a balance instead of preparing the payment.
+
+- It FAILS SAFE - nothing mutates without confirmation, so the safety property holds - but
+  it FAILS THE USER, because the change silently does not happen.
+- THE 54-SCENARIO SUITE IS BLIND TO THIS. It contains only a handful of write scenarios, so
+  42 write phrasings is already an order of magnitude more coverage. This is the whole
+  argument for a differently-distributed test set.
+- IT REVERSES THE RANKING: TF-IDF is much better here (17 against 29) despite MiniLM
+  winning on the suite. Ranking two routers on the suite alone would have picked wrong for
+  this axis.
+
+A candidate fix is symmetric to one the rules already have: `choose_tool` DEMOTES a write
+tool when `write_intent(prompt)` is false, but nothing PROMOTES one when it is true. Care
+is needed because `WRITE_VERBS` includes "record", so "check the record for X" reads as
+write intent; a naive promotion would misfire.
+
+BEST NEXT STEP is 20-30 prompts written by the actual users or the repo owner. Those are
+worth more than hundreds of generated ones, because the phrasing distribution is the thing
+under test and only real users have it.
+
 ## The answer-model choice, on current code (MiniLM router, all fixes)
 
 Full suite 54 x 3, T580, `-t 4`, Q4_K_M, provenance-matched GGUFs:

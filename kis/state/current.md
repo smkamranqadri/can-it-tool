@@ -89,8 +89,17 @@ None. Nothing is half-written; no benchmark processes are running.
    3400G. The `llama-bench` +23% prompt-processing win did not transfer because the median
    request is a fixed reply that never calls the LLM.
 
-4. Held-out prompts the rules were not designed against. Still the honest generalization
-   check and untouched by any hardware work.
+4. HELD-OUT PROMPTS - started, and it already paid off. `scripts/heldout_prompts.py`
+   generates them with the local 2B from plain-English capability descriptions, so the
+   phrasing is independent of our templates. The generated LABELS are too noisy for a
+   headline accuracy number, but the set found a real weakness the suite cannot see: both
+   routers route WRITE requests to READ tools on unfamiliar phrasing (MiniLM 29 of 42,
+   TF-IDF 17 of 42). Fails safe, fails the user, and REVERSES the router ranking.
+   Next: (a) decide whether to fix write-intent promotion in `choose_tool` - note
+   `WRITE_VERBS` contains "record", so a naive rule misfires on "check the record";
+   (b) ask the repo owner or real staff for 20-30 genuine prompts, which are worth more
+   than hundreds of generated ones.
+
 5. The target itself (Ryzen 5 PRO 3400G, 16 GB): shortlist, load test AND a full-suite run,
    since accuracy does not transfer across architectures. Start from `-t 4`, slots 4, and
    budget ~2.3 GB for Laya.
