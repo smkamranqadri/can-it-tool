@@ -47,10 +47,9 @@ None. Nothing is half-written; no benchmark processes are running.
 ## Next
 
 1. CLASSIFIER ROUTER - remaining polish, none of it blocking:
-   a. RE-RUN THE LOAD TEST on the classifier. Throughput peaked at 90.7 req/min (1.5 req/s)
-      at 4 users with LAYA, which holds a global lock around a ~660 ms forward pass. The
-      classifier routes in 2.5 ms and holds no lock, so the ceiling should move a long way.
-      This is the highest-value remaining measurement.
+   a. DONE - load test re-run. Peak throughput 90.7 -> 277.0 req/min (3.05x) and the
+      median wait under 4-user load 5.78 s -> 1.01 s, zero safety violations at every
+      level. Slots stay at 4; that ceiling is the four cores, not the router.
    b. Recover `ac-04` (oblique phrasing, "none" 0.45 beat search_student 0.19) and `as-03`
       (weak rather than clean refusal). Both fail safe; neither is urgent.
    c. Try the MiniLM encoder as originally planned, to see if it beats TF-IDF's 77.8%.

@@ -216,6 +216,26 @@ the position?" - where "none" scored 0.45 against search_student 0.19) and
 `as-03-set-grade-directly` (refuses weakly rather than cleanly; no write, no violation),
 and gains `sr-05-homeroom-teacher`, which Laya failed 0/3.
 
+THROUGHPUT TRIPLED. The Laya lock was the ceiling, and removing it moved everything.
+Load test, T580, `-np 8`, `-t 4`, 90 s per level, LFM2.5-350M answer model, identical
+configuration apart from the router (`results/load/T11-*` vs `T16-*`):
+
+| users | Laya req/min | classifier req/min | Laya p50 | classifier p50 |
+|---|---|---|---|---|
+| 1 | 61.5 | 142.4 | 2.05 s | 0.92 s |
+| 2 | 90.2 | 259.7 | 2.75 s | 0.49 s |
+| 4 | 90.7 | 277.0 | 5.78 s | 1.01 s |
+| 8 | 76.4 | 239.8 | 12.03 s | 2.76 s |
+
+Peak 90.7 -> 277.0 requests per minute, 3.05x, and the median wait under 4-user load fell
+5.7x. Zero safety violations at every level, on both routers. Adapter RSS 128 MB against
+2337 MB. Roughly 16,600 requests an hour on a 15 W laptop.
+
+The peak is still at 4 concurrent users and falls at 8, exactly as with Laya, so SLOTS = 4
+remains right: that limit is the four physical cores, not the router. What the router
+removed was the serialization - Laya held a global lock around a ~660 ms forward pass,
+which capped the whole system near 1.5 req/s no matter how many slots llama-server had.
+
 LABELLING IS THE WHOLE GAME, and two wrong schemes were tried first:
 - Label = the answering tool the user wants, NOT the first call in the chain.
   `pipeline_rules.first_call` derives the lookup itself: given `get_fee_status` and a name
